@@ -4,6 +4,7 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>IBM Z lease schedule capacity</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230f62fe'/%3E%3Ctext x='32' y='42' text-anchor='middle' font-family='Arial,sans-serif' font-size='26' font-weight='700' fill='white'%3EZ%3C/text%3E%3C/svg%3E"/>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
@@ -61,10 +62,23 @@ header.hero {
   background: linear-gradient(180deg, rgba(21, 34, 56, 0.92), rgba(11, 18, 32, 0.55));
   backdrop-filter: blur(8px);
 }
-.hero-inner { max-width: 1480px; margin: 0 auto; }
+.hero-inner { max-width: min(100%, 1760px); margin: 0 auto; }
+.brand-row {
+  display: flex; align-items: center; gap: 0.85rem; margin-bottom: 0.75rem;
+}
+.brand-mark {
+  flex: 0 0 auto;
+  width: 2.6rem; height: 2.6rem;
+  border-radius: 0.7rem;
+  background: linear-gradient(145deg, #0f62fe, #08a3b8);
+  display: grid; place-items: center;
+  box-shadow: 0 8px 20px rgba(15, 98, 254, 0.35);
+}
+.brand-mark svg { width: 1.55rem; height: 1.55rem; display: block; }
+.brand-text { min-width: 0; }
 .eyebrow {
   display: inline-block;
-  margin: 0 0 0.55rem;
+  margin: 0 0 0.35rem;
   color: var(--accent-text);
   font-size: 0.72rem;
   font-weight: 600;
@@ -72,7 +86,7 @@ header.hero {
   text-transform: uppercase;
 }
 header.hero h1 {
-  margin: 0 0 0.55rem;
+  margin: 0;
   font-size: clamp(1.55rem, 2.4vw, 2rem);
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -80,7 +94,7 @@ header.hero h1 {
 }
 .lede {
   margin: 0;
-  max-width: 62rem;
+  width: 100%;
   color: var(--text-secondary);
   font-size: 1rem;
   line-height: 1.55;
@@ -107,7 +121,7 @@ header.hero h1 {
   background: var(--accent); color: #fff;
 }
 .toolbar-note { color: var(--muted); font-size: 0.8rem; }
-main { padding: 1.25rem clamp(1.1rem, 2.5vw, 2rem) 3.5rem; max-width: 1480px; margin: 0 auto; }
+main { padding: 1.25rem clamp(1rem, 2vw, 1.75rem) 3.5rem; max-width: min(100%, 1760px); margin: 0 auto; }
 .tabs {
   display: flex; flex-wrap: wrap; gap: 0.55rem;
   margin: 0 0 1.15rem; padding: 0.15rem 0 0.25rem;
@@ -117,10 +131,12 @@ main { padding: 1.25rem clamp(1.1rem, 2.5vw, 2rem) 3.5rem; max-width: 1480px; ma
   background: var(--panel);
   border: 1px solid var(--border);
   color: var(--text);
-  padding: 0.7rem 0.9rem;
+  padding: 0.75rem 1rem;
   border-radius: var(--radius-sm);
   cursor: pointer;
   text-align: left;
+  flex: 1 1 200px;
+  min-width: 0;
   transition: border-color .15s ease, background .15s ease, transform .15s ease;
 }
 .tab:hover { border-color: var(--border-strong); transform: translateY(-1px); }
@@ -164,42 +180,58 @@ main { padding: 1.25rem clamp(1.1rem, 2.5vw, 2rem) 3.5rem; max-width: 1480px; ma
 .panel-lead {
   margin: 0.45rem 0 0;
   color: var(--muted);
-  font-size: 0.9rem;
-  max-width: 70rem;
+  font-size: 0.95rem;
+  width: 100%;
+  max-width: none;
 }
 .profile-title {
   margin: 0 0 0.95rem;
   font-family: var(--mono);
-  font-size: 0.95rem;
+  font-size: 1rem;
   font-weight: 500;
   color: var(--accent-text);
 }
 .meta {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
-  gap: 0.7rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+@media (max-width: 1100px) {
+  .meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .meta { grid-template-columns: 1fr; }
 }
 .metric {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 0.85rem 0.9rem;
+  padding: 1rem 1.05rem;
   border-left: 3px solid var(--accent);
+  min-width: 0;
 }
 .metric .label {
-  color: var(--muted);
-  font-size: 0.68rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
   line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .metric .value {
-  margin-top: 0.35rem;
-  font-size: 1.35rem;
+  margin-top: 0.4rem;
+  font-size: clamp(1.45rem, 2vw, 1.75rem);
   font-weight: 700;
   letter-spacing: -0.02em;
-  word-break: break-word;
+  line-height: 1.1;
+}
+.metric .hint {
+  margin-top: 0.4rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
 }
 .lease-names {
   margin: 1rem 0 0;
@@ -222,29 +254,38 @@ main { padding: 1.25rem clamp(1.1rem, 2.5vw, 2rem) 3.5rem; max-width: 1480px; ma
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg-elevated);
+  width: 100%;
 }
 table.heatmap {
   border-collapse: separate;
-  border-spacing: 2px;
-  font-size: 0.72rem;
-  min-width: 980px;
+  border-spacing: 3px;
+  font-size: 0.85rem;
   width: 100%;
-  padding: 0.35rem;
+  table-layout: fixed;
+  padding: 0.45rem;
 }
 table.heatmap th, table.heatmap td {
-  width: 2.45rem; height: 2.2rem; text-align: center;
-  border-radius: 4px;
+  text-align: center;
+  border-radius: 5px;
+  min-width: 0;
+}
+table.heatmap th:first-child,
+table.heatmap td:first-child {
+  width: 3.4rem;
+  min-width: 3.4rem;
 }
 table.heatmap th {
   color: var(--muted); font-weight: 600; background: transparent; line-height: 1.15;
-  font-family: var(--mono); font-size: 0.68rem;
+  font-family: var(--mono); font-size: 0.72rem;
+  height: 2.4rem;
 }
-table.heatmap th .sub { display:block; font-size: 0.58rem; opacity: 0.8; font-weight: 500; }
+table.heatmap th .sub { display:block; font-size: 0.62rem; opacity: 0.85; font-weight: 500; }
 table.heatmap td {
-  cursor: pointer; font-family: var(--mono); font-weight: 500;
+  cursor: pointer; font-family: var(--mono); font-weight: 600;
+  height: clamp(2.6rem, 4.2vw, 3.35rem);
   transition: transform .12s ease, outline-color .12s ease;
 }
-table.heatmap td:hover { transform: scale(1.06); outline: 1px solid var(--border-strong); }
+table.heatmap td:hover { transform: scale(1.04); outline: 1px solid var(--border-strong); z-index: 1; }
 table.heatmap td.idle { background: var(--idle-bg); color: var(--idle-text); }
 table.heatmap td.ok { background: var(--ok-bg); color: var(--ok-text); }
 table.heatmap td.warn { background: var(--warn-bg); color: var(--warn-text); }
@@ -328,8 +369,18 @@ table.jobs tbody tr:hover, table.wf tbody tr:hover { background: rgba(15, 98, 25
 <body>
 <header class="hero">
   <div class="hero-inner">
-    <p class="eyebrow">IBM Z · s390x CI capacity</p>
-    <h1>IBM Z lease schedule capacity</h1>
+    <div class="brand-row">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M6 8h20v3.2H6V8zm0 6.4h20V18H6v-3.6zm0 6.4h20V24H6v-3.2z" fill="#fff"/>
+          <circle cx="24.2" cy="9.6" r="2.2" fill="#9ef0f0"/>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <p class="eyebrow">IBM Z · s390x CI capacity</p>
+        <h1>IBM Z lease schedule capacity</h1>
+      </div>
+    </div>
     <p class="lede">Configured cron demand vs Boskos lease capacity for full <code>libvirt-s390x-vpn*</code> cluster profiles.</p>
     <div class="meta-row">
       <span>Generated <strong id="generated"></strong></span>
@@ -353,7 +404,7 @@ table.jobs tbody tr:hover, table.wf tbody tr:hover { background: rgba(15, 98, 25
     <div class="panel-head">
       <p class="eyebrow">Overview</p>
       <h2>Profile summary</h2>
-      <p class="panel-lead">Lease inventory and schedule pressure for the selected cluster profile.</p>
+      <p class="panel-lead">Simple snapshot of capacity, how busy this profile gets, and how long jobs typically hold a lease.</p>
     </div>
     <p id="profile-title" class="profile-title"></p>
     <div class="meta" id="metrics"></div>
@@ -562,18 +613,18 @@ function renderMetrics(p) {
   document.getElementById('profile-title').textContent = p.name;
   const minAvail = Math.max(0, p.capacity - (p.peak_demand || 0));
   const items = [
-    ['Total leases (capacity)', p.capacity],
-    ['Peak leases in use', p.peak_demand],
-    ['Min leases available', minAvail],
-    ['Jobs', p.job_count],
-    ['Weekly/daily in heatmap', p.weekly_job_count],
-    ['Low-frequency', p.low_frequency_job_count],
-    ['Overcommit hours / week', p.overcommit_hours],
-    ['Median lease hold', (p.median_duration_hours != null ? p.median_duration_hours + 'h' : '—')],
-    ['Sippy coverage', p.sippy_coverage != null ? Math.round(p.sippy_coverage * 100) + '%' : '—'],
+    ['Total leases', p.capacity, 'How many machines/leases this profile can run at once.'],
+    ['Busiest moment', p.peak_demand, 'Most leases in use at the same time in a normal week.'],
+    ['Still free at peak', minAvail, 'Leases left even during the busiest hour (capacity − peak).'],
+    ['All jobs', p.job_count, 'Total periodic jobs configured on this profile.'],
+    ['Weekly jobs', p.weekly_job_count, 'Jobs that run every week/day and appear in the heatmap.'],
+    ['Rare jobs', p.low_frequency_job_count, 'Monthly/yearly jobs listed below but not in the heatmap.'],
+    ['Overbooked hours', p.overcommit_hours, 'Hours where planned jobs need more leases than capacity.'],
+    ['Typical job length', (p.median_duration_hours != null ? p.median_duration_hours + 'h' : '—'), 'Median time a job holds a lease (full pre → test → post).'],
+    ['Sippy data coverage', p.sippy_coverage != null ? Math.round(p.sippy_coverage * 100) + '%' : '—', 'Share of jobs with real runtime data from Sippy CI.'],
   ];
-  document.getElementById('metrics').innerHTML = items.map(([label, value]) =>
-    `<div class="metric"><div class="label">${label}</div><div class="value">${value}</div></div>`
+  document.getElementById('metrics').innerHTML = items.map(([label, value, hint]) =>
+    `<div class="metric"><div class="label">${label}</div><div class="value">${value}</div><div class="hint">${hint}</div></div>`
   ).join('');
   document.getElementById('lease-names').innerHTML =
     `<strong>lease_type</strong> <code>${p.lease_type}</code><br/>` +
