@@ -1601,6 +1601,24 @@ header.hero h1 {{
   box-shadow: inset 0 0 12px rgba(255,255,255,0.18);
 }}
 .toolbar-note {{ color: var(--muted); font-size: 0.76rem; text-align: right; max-width: 16rem; }}
+.hero-nav-link {{
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--accent-text);
+  font: 600 0.82rem/1.2 var(--font);
+  text-decoration: none;
+  box-shadow: 0 0 16px var(--accent-soft);
+  white-space: nowrap;
+}}
+.hero-nav-link:hover {{
+  text-decoration: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 20px var(--glow-blue);
+}}
+.hero-nav-link svg {{ width: 0.95rem; height: 0.95rem; flex: 0 0 auto; }}
 main {{ padding: 1.25rem clamp(1rem, 2vw, 1.75rem) 3.5rem; max-width: min(100%, 1760px); margin: 0 auto; }}
 .tabs {{
   display: flex; flex-wrap: wrap; gap: 0.55rem;
@@ -1998,8 +2016,7 @@ table.jobs tbody tr:hover, table.wf tbody tr:hover {{ background: var(--accent-s
 <script>
 (() => {{
   const saved = localStorage.getItem('ibmz-lease-theme');
-  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-  document.documentElement.setAttribute('data-theme', saved || (prefersDark ? 'dark' : 'light'));
+  document.documentElement.setAttribute('data-theme', saved || 'dark');
 }})();
 </script>
 </head>
@@ -2022,6 +2039,10 @@ table.jobs tbody tr:hover, table.wf tbody tr:hover {{ background: var(--accent-s
         </div>
       </div>
       <div class="hero-actions">
+        <a class="hero-nav-link" href="https://ibm-adarsh.github.io/ibmz-openshift-job-monitor/" target="_blank" rel="noopener" title="Open IBM Z CI Job Monitor">
+          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3h7v7M13 3 7 9M3 6v7h7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Job Monitor
+        </a>
         <div class="control-row">
           <div class="toggle" id="theme-toggle" title="Color theme">
             <button type="button" data-theme-choice="light">Light</button>
