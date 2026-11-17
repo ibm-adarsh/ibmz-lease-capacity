@@ -1396,9 +1396,9 @@ def render_html(
     buf = duration_meta.get("lease_buffer_minutes")
     buf_note = f" + {buf:g}m lease buffer" if buf else ""
     sippy_note = (
-        f"full job wall-clock pre→test→post from Sippy{buf_note}"
+        f"Sippy full job{buf_note}"
         if duration_meta.get("enabled")
-        else f"fixed {duration_meta.get('default_hours')}h lease hold{buf_note}"
+        else f"fixed {duration_meta.get('default_hours')}h{buf_note}"
     )
 
     html = f"""<!DOCTYPE html>
@@ -1460,70 +1460,84 @@ a {{ color: var(--accent-text); text-decoration: none; }}
 a:hover {{ text-decoration: underline; }}
 code, .mono {{ font-family: var(--mono); font-size: 0.92em; }}
 header.hero {{
-  padding: 1.75rem clamp(1.1rem, 2.5vw, 2rem) 1.35rem;
+  padding: 1.9rem clamp(1.1rem, 2.5vw, 2.25rem) 1.5rem;
   border-bottom: 1px solid var(--border);
-  background: linear-gradient(180deg, rgba(21, 34, 56, 0.92), rgba(11, 18, 32, 0.55));
-  backdrop-filter: blur(8px);
+  background:
+    radial-gradient(700px 220px at 12% 0%, rgba(15, 98, 254, 0.22), transparent 60%),
+    linear-gradient(180deg, rgba(18, 30, 50, 0.96), rgba(11, 18, 32, 0.72));
 }}
 .hero-inner {{ max-width: min(100%, 1760px); margin: 0 auto; }}
+.hero-top {{
+  display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between;
+  gap: 1rem 1.5rem;
+}}
 .brand-row {{
-  display: flex; align-items: center; gap: 0.85rem; margin-bottom: 0.75rem;
+  display: flex; align-items: center; gap: 1rem; min-width: 0;
 }}
 .brand-mark {{
   flex: 0 0 auto;
-  width: 2.6rem; height: 2.6rem;
-  border-radius: 0.7rem;
+  width: 3rem; height: 3rem;
+  border-radius: 0.85rem;
   background: linear-gradient(145deg, #0f62fe, #08a3b8);
   display: grid; place-items: center;
-  box-shadow: 0 8px 20px rgba(15, 98, 254, 0.35);
+  box-shadow: 0 10px 24px rgba(15, 98, 254, 0.32);
 }}
-.brand-mark svg {{ width: 1.55rem; height: 1.55rem; display: block; }}
+.brand-mark svg {{ width: 1.65rem; height: 1.65rem; display: block; }}
 .brand-text {{ min-width: 0; }}
 .eyebrow {{
   display: inline-block;
-  margin: 0 0 0.35rem;
+  margin: 0 0 0.3rem;
   color: var(--accent-text);
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 600;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
 }}
 header.hero h1 {{
   margin: 0;
-  font-size: clamp(1.55rem, 2.4vw, 2rem);
+  font-size: clamp(1.7rem, 2.8vw, 2.35rem);
   font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
 }}
 .lede {{
-  margin: 0;
-  width: 100%;
+  margin: 0.85rem 0 0;
+  max-width: 42rem;
   color: var(--text-secondary);
-  font-size: 1rem;
-  line-height: 1.55;
+  font-size: 1.02rem;
+  line-height: 1.5;
 }}
-.meta-row {{
-  display: flex; flex-wrap: wrap; gap: 0.55rem 1.1rem;
-  margin-top: 0.9rem;
+.hero-actions {{
+  display: flex; flex-direction: column; align-items: flex-end; gap: 0.55rem;
+}}
+.meta-chips {{
+  display: flex; flex-wrap: wrap; gap: 0.45rem;
+  margin-top: 1.05rem;
+}}
+.meta-chip {{
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid rgba(61, 84, 117, 0.7);
+  background: rgba(16, 26, 43, 0.72);
   color: var(--muted);
-  font-size: 0.84rem;
+  font-size: 0.78rem;
+  line-height: 1.2;
 }}
-.meta-row strong {{ color: var(--text-secondary); font-weight: 600; }}
-.toolbar {{
-  display: flex; flex-wrap: wrap; gap: 0.7rem; align-items: center; margin-top: 1.1rem;
-}}
+.meta-chip strong {{ color: var(--text-secondary); font-weight: 600; }}
+.meta-chip a {{ color: var(--accent-text); }}
 .toggle {{
   display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
   overflow: hidden; background: var(--bg-elevated);
 }}
 .toggle button {{
-  background: transparent; color: var(--muted); border: 0; padding: 0.45rem 0.85rem;
+  background: transparent; color: var(--muted); border: 0; padding: 0.48rem 0.9rem;
   cursor: pointer; font: 500 0.82rem/1 var(--font);
 }}
 .toggle button.active {{
   background: var(--accent); color: #fff;
 }}
-.toolbar-note {{ color: var(--muted); font-size: 0.8rem; }}
+.toolbar-note {{ color: var(--muted); font-size: 0.76rem; text-align: right; max-width: 16rem; }}
 main {{ padding: 1.25rem clamp(1rem, 2vw, 1.75rem) 3.5rem; max-width: min(100%, 1760px); margin: 0 auto; }}
 .tabs {{
   display: flex; flex-wrap: wrap; gap: 0.55rem;
@@ -1638,16 +1652,28 @@ main {{ padding: 1.25rem clamp(1rem, 2vw, 1.75rem) 3.5rem; max-width: min(100%, 
 }}
 .lease-names {{
   margin: 1rem 0 0;
-  padding: 0.85rem 0.95rem;
+  padding: 0.9rem 1rem;
   background: rgba(11, 18, 32, 0.55);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   line-height: 1.55;
   word-break: break-word;
 }}
-.lease-names strong {{ color: var(--text-secondary); }}
+.lease-names .lease-label {{
+  display: inline-block;
+  min-width: 5.75rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+}}
+.class-label {{
+  display: inline-block;
+  font-size: 0.8rem;
+  font-weight: 560;
+  color: var(--text-secondary);
+  letter-spacing: 0.01em;
+}}
 .callout {{
   border-left: 3px solid #08a3b8;
 }}
@@ -1844,11 +1870,38 @@ table.jobs tbody tr:hover, table.wf tbody tr:hover {{ background: rgba(15, 98, 2
 .pill.default {{ color: var(--muted); background: rgba(143, 160, 184, 0.08); cursor: help; }}
 .links a {{ color: var(--accent); text-decoration: none; }}
 .links a:hover {{ text-decoration: underline; }}
-.help-list {{
-  margin: 0; padding-left: 1.15rem; color: var(--text-secondary); font-size: 0.92rem;
+.guide-grid {{
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
 }}
-.help-list li {{ margin: 0.35rem 0; }}
-.help-list strong {{ color: var(--text); }}
+@media (max-width: 860px) {{
+  .guide-grid {{ grid-template-columns: 1fr; }}
+}}
+.guide-card {{
+  margin: 0;
+  padding: 0.9rem 1rem;
+  background: rgba(11, 18, 32, 0.45);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}}
+.guide-card h3 {{
+  margin: 0 0 0.35rem;
+  font-size: 0.92rem;
+  font-weight: 650;
+  color: var(--text);
+}}
+.guide-card p {{
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}}
+.guide-foot {{
+  margin: 0.9rem 0 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+}}
 .cron-english {{
   color: var(--text-secondary);
   font-size: 0.82rem;
@@ -1861,32 +1914,32 @@ table.jobs tbody tr:hover, table.wf tbody tr:hover {{ background: rgba(15, 98, 2
 <body>
 <header class="hero">
   <div class="hero-inner">
-    <div class="brand-row">
-      <div class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M6 8h20v3.2H6V8zm0 6.4h20V18H6v-3.6zm0 6.4h20V24H6v-3.2z" fill="#fff"/>
-          <circle cx="24.2" cy="9.6" r="2.2" fill="#9ef0f0"/>
-        </svg>
+    <div class="hero-top">
+      <div class="brand-row">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M6 8h20v3.2H6V8zm0 6.4h20V18H6v-3.6zm0 6.4h20V24H6v-3.2z" fill="#fff"/>
+            <circle cx="24.2" cy="9.6" r="2.2" fill="#9ef0f0"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <p class="eyebrow">IBM Z · s390x CI</p>
+          <h1>Lease capacity</h1>
+        </div>
       </div>
-      <div class="brand-text">
-        <p class="eyebrow">IBM Z · s390x CI capacity</p>
-        <h1>IBM Z lease schedule capacity</h1>
+      <div class="hero-actions">
+        <div class="toggle" id="tz-toggle" title="Display timezone">
+          <button type="button" data-tz="UTC" class="active">UTC</button>
+          <button type="button" data-tz="IST">IST</button>
+        </div>
+        <span class="toolbar-note">Heatmap stays on cron UTC; labels convert when IST is selected.</span>
       </div>
     </div>
-    <p class="lede">Configured cron demand vs Boskos lease capacity for full <code>libvirt-s390x-vpn*</code> cluster profiles.</p>
-    <div class="meta-row">
-      <span>Generated <strong id="generated"></strong></span>
-      <span>Duration model: <strong id="duration-model">{html_escape(sippy_note)}</strong></span>
-      <span>Source <a id="source-link" href="https://github.com/openshift/release" target="_blank" rel="noopener">openshift/release</a>
-        @ <code id="source-sha"></code>
-        <span id="source-subject"></span></span>
-    </div>
-    <div class="toolbar">
-      <div class="toggle" id="tz-toggle" title="Display timezone">
-        <button type="button" data-tz="UTC" class="active">UTC</button>
-        <button type="button" data-tz="IST">IST (UTC+5:30)</button>
-      </div>
-      <span class="toolbar-note">Heatmap planning stays on cron-UTC; labels convert for reading.</span>
+    <p class="lede">See when <code>libvirt-s390x-vpn*</code> jobs need leases — and how much capacity is still free.</p>
+    <div class="meta-chips">
+      <span class="meta-chip">Updated <strong id="generated"></strong></span>
+      <span class="meta-chip">Hold model <strong id="duration-model">{html_escape(sippy_note)}</strong></span>
+      <span class="meta-chip">Source <a id="source-link" href="https://github.com/openshift/release" target="_blank" rel="noopener">openshift/release</a> <code id="source-sha"></code></span>
     </div>
   </div>
 </header>
@@ -1908,11 +1961,9 @@ table.jobs tbody tr:hover, table.wf tbody tr:hover {{ background: rgba(15, 98, 2
       <h2>Lease occupancy model</h2>
     </div>
     <p class="panel-lead">
-      A Boskos lease is acquired when the job <strong>starts</strong> and stays held through
-      <strong>pre → test → post</strong> (full Prow job wall-clock from Sippy, not test-phase only).
-      Example: capacity <code>10</code>, one job with a <code>3h</code> lease hold ⇒ for the next 3 hours
-      that lease is busy, so only <code>9</code> leases remain available for other jobs.
-      Heatmap cell value = <strong>leases in use</strong>; available = capacity − in use.
+      A lease is taken when the job <strong>starts</strong> and stays busy through
+      <strong>pre → test → post</strong>. Example: capacity <code>10</code> and one <code>3h</code> hold
+      leaves <code>9</code> leases free for those 3 hours. Heatmap cells show <strong>leases in use</strong>.
     </p>
   </section>
   <section class="panel">
@@ -1930,10 +1981,10 @@ table.jobs tbody tr:hover, table.wf tbody tr:hover {{ background: rgba(15, 98, 2
       <table class="heatmap" id="heatmap"></table>
     </div>
     <div class="legend">
-      <span><i class="swatch" style="background:var(--idle-bg)"></i> idle (0)</span>
-      <span><i class="swatch" style="background:var(--ok-bg)"></i> under capacity</span>
+      <span><i class="swatch" style="background:var(--idle-bg)"></i> Idle (0)</span>
+      <span><i class="swatch" style="background:var(--ok-bg)"></i> Under capacity</span>
       <span><i class="swatch" style="background:var(--warn-bg)"></i> ≥80% capacity</span>
-      <span><i class="swatch" style="background:var(--bad-bg)"></i> overcommit</span>
+      <span><i class="swatch" style="background:var(--bad-bg)"></i> Overcommit</span>
     </div>
     <div id="cell-detail"></div>
   </section>
@@ -1998,10 +2049,9 @@ table.jobs tbody tr:hover, table.wf tbody tr:hover {{ background: rgba(15, 98, 2
       <select id="filter-version"><option value="">All versions</option></select>
       <select id="filter-class">
         <option value="">All schedule classes</option>
-        <option value="daily">daily</option>
-        <option value="weekly">weekly</option>
-        <option value="low-frequency">low-frequency</option>
-        <option value="invalid">invalid</option>
+        <option value="daily">Daily</option>
+        <option value="weekly">Weekly</option>
+        <option value="low-frequency">Low-frequency</option>
       </select>
       <select id="filter-duration">
         <option value="">All duration sources</option>
@@ -2025,27 +2075,39 @@ table.jobs tbody tr:hover, table.wf tbody tr:hover {{ background: rgba(15, 98, 2
   <section class="panel">
     <div class="panel-head">
       <p class="eyebrow">Guide</p>
-      <h2>How to read this</h2>
+      <h2>How to use this</h2>
+      <p class="panel-lead">A short path through the page — what to look at first, and what the numbers mean.</p>
     </div>
-    <ul class="help-list">
-      <li>Profile tabs show the <strong>full</strong> cluster profile name (e.g. <code>libvirt-s390x-vpn-amd64</code>).</li>
-      <li>Prow cron times are UTC. Capacity comes from Boskos <code>*-quota-slice</code> name lists.</li>
-      <li>Each periodic acquires <strong>1 lease at job start</strong> and keeps it for the full wall-clock
-          (pre → test → post) after each cron start. Remaining capacity that hour =
-          <code>total leases − leases in use</code>.</li>
-      <li>Duration source is Sippy full ProwJob average minutes (not test-only), biased toward the
-          longer recent window when failures shorten the average, plus a small lease buffer; then
-          workflow median; then the configured default. Green <strong>sippy</strong> /
-          amber <strong>workflow</strong> badges next to lease hold are labels (not links).</li>
-      <li>When an OCP version has no Sippy history for a job, lease hold is taken from the
-          <strong>same job on another OCP version</strong> that does have data. Links →
-          <code>sippy</code> / <code>prow</code> open that version’s history (older releases
-          like 4.12 often have none of their own).</li>
-      <li><code>low-frequency</code> jobs (day-of-month / @yearly) are listed but excluded from the weekly heatmap.</li>
-      <li>This is a configured-schedule planning model, not live Boskos occupancy.</li>
-      <li>Dashboard refreshes daily at 08:00 IST from <code>openshift/release</code> (+ Sippy durations).</li>
-      <li>Raw data: <a href="jobs.csv">jobs.csv</a> · <a href="summary.json">summary.json</a></li>
-    </ul>
+    <div class="guide-grid">
+      <article class="guide-card">
+        <h3>1. Pick a profile</h3>
+        <p>Use the tabs for the full cluster profile name (for example <code>libvirt-s390x-vpn-amd64</code>). Capacity comes from Boskos lease lists.</p>
+      </article>
+      <article class="guide-card">
+        <h3>2. Read the heatmap</h3>
+        <p>Each cell is leases in use that <strong>UTC</strong> hour. Available = total − in use. Click a cell to see which jobs overlap.</p>
+      </article>
+      <article class="guide-card">
+        <h3>3. Find free windows</h3>
+        <p>Best free windows and top free hours are the safest places to add or move jobs. Busiest hours show pressure.</p>
+      </article>
+      <article class="guide-card">
+        <h3>4. Check job hold times</h3>
+        <p>Lease hold is full job time (pre → test → post), usually from Sippy. Green/amber badges are source labels, not links — use Links for history.</p>
+      </article>
+      <article class="guide-card">
+        <h3>5. Older OCP versions</h3>
+        <p>If a version has no Sippy history, hold time is taken from the same job on another version. Sippy/Prow links open that version’s history.</p>
+      </article>
+      <article class="guide-card">
+        <h3>6. Low-frequency jobs</h3>
+        <p>Monthly or yearly jobs are listed in Inventory but stay out of the weekly heatmap so the grid stays readable.</p>
+      </article>
+    </div>
+    <p class="guide-foot">
+      This is a <strong>planned schedule</strong> model (not live Boskos occupancy). Refreshes daily at 08:00 IST from
+      <code>openshift/release</code>. Raw data: <a href="jobs.csv">jobs.csv</a> · <a href="summary.json">summary.json</a>
+    </p>
   </section>
 </main>
 <script id="report-data" type="application/json">{data_json}</script>
@@ -2061,7 +2123,11 @@ if (DATA.source) {{
   const link = document.getElementById('source-link');
   if (DATA.source.source_url) link.href = DATA.source.source_url;
   document.getElementById('source-sha').textContent = DATA.source.short_sha || 'unknown';
-  document.getElementById('source-subject').textContent = DATA.source.subject ? ' — ' + DATA.source.subject : '';
+}}
+
+function prettyLabel(value) {{
+  if (!value) return '';
+  return String(value).split('-').map(part => part ? part.charAt(0).toUpperCase() + part.slice(1) : part).join('-');
 }}
 
 document.querySelectorAll('#tz-toggle button').forEach(btn => {{
@@ -2179,8 +2245,8 @@ function renderMetrics(p) {{
     `<div class="metric"><div class="label">${{label}}</div><div class="value">${{value}}</div><div class="hint">${{hint}}</div></div>`
   ).join('');
   document.getElementById('lease-names').innerHTML =
-    `<strong>lease_type</strong> <code>${{p.lease_type}}</code><br/>` +
-    `<strong>leases</strong> ${{p.lease_names.map(n => `<code>${{n}}</code>`).join(', ') || '(none found)'}}`;
+    `<span class="lease-label">Lease type</span> <code>${{p.lease_type || '—'}}</code><br/>` +
+    `<span class="lease-label">Leases</span> ${{p.lease_names.map(n => `<code>${{n}}</code>`).join(', ') || '(none found)'}}`;
 }}
 
 function renderHeatmap(p) {{
@@ -2300,7 +2366,7 @@ function renderJobs(p) {{
       <td>${{j.ocp_version}}</td>
       <td class="mono">${{j.cron || j.interval || ''}}</td>
       <td class="cron-english">${{english}}</td>
-      <td>${{j.schedule_class}}</td>
+      <td><span class="class-label">${{prettyLabel(j.schedule_class)}}</span></td>
       <td title="${{holdTitle}}">${{hold}}${{observed}} ${{durationPill(j)}}</td>
       <td class="mono">${{j.workflow || ''}}</td>
       <td class="links" style="font-size:.75rem;white-space:nowrap">${{jobHistoryLinks(j)}}</td>
