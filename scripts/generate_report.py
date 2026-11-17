@@ -1924,23 +1924,13 @@ ul.slots li:last-child {{ border-bottom: 0; }}
 .badge {{
   font-size: 0.75rem; font-weight: 650; padding: 0.22rem 0.55rem;
   border-radius: 6px;
-  background: var(--panel-soft);
-  border: 1px solid var(--border-strong);
-  color: var(--text);
+  background: color-mix(in srgb, var(--ok-bg) 85%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--ok) 45%, var(--border));
+  color: var(--ok-text);
   white-space: nowrap;
   letter-spacing: 0.01em;
 }}
-.badge.badge-free {{
-  background: color-mix(in srgb, var(--ok-bg) 85%, var(--panel));
-  border-color: color-mix(in srgb, var(--ok) 45%, var(--border));
-  color: var(--ok-text);
-}}
 [data-theme="dark"] .badge {{
-  background: rgba(166, 200, 255, 0.12);
-  border-color: rgba(166, 200, 255, 0.45);
-  color: #e8f1ff;
-}}
-[data-theme="dark"] .badge.badge-free {{
   background: rgba(66, 190, 101, 0.22);
   border-color: rgba(66, 190, 101, 0.65);
   color: #b6f5c8;
@@ -2462,10 +2452,10 @@ function renderSlots(p) {{
   blocks.innerHTML = (p.free_blocks || []).map(b => {{
     const endDay = b.end_hour >= 24 ? DATA.day_names[(b.dow + 1) % 7] : b.day;
     const endHour = b.end_hour % 24;
-    return `<li><span>${{formatSlot(b.day, b.start_hour)}} → ${{formatSlot(endDay, endHour)}} (${{b.hours}}h)</span><span class="badge badge-free">≥${{b.min_spare}} leases free</span></li>`;
+    return `<li><span>${{formatSlot(b.day, b.start_hour)}} → ${{formatSlot(endDay, endHour)}} (${{b.hours}}h)</span><span class="badge">≥${{b.min_spare}} leases free</span></li>`;
   }}).join('') || '<li style="color:var(--muted)">No multi-hour free windows under current model.</li>';
   free.innerHTML = (p.free || []).map(c =>
-    `<li><span>${{formatSlot(c.day, c.hour)}}</span><span class="badge badge-free">${{c.demand}} in use · ${{c.spare}} available</span></li>`
+    `<li><span>${{formatSlot(c.day, c.hour)}}</span><span class="badge">${{c.demand}} in use · ${{c.spare}} available</span></li>`
   ).join('') || '<li style="color:var(--muted)">No free capacity under current model.</li>';
   busy.innerHTML = (p.busiest || []).map(c =>
     `<li><span>${{formatSlot(c.day, c.hour)}}</span><span class="badge">${{c.demand}} in use / ${{c.capacity}} · ${{c.spare}} free</span></li>`
