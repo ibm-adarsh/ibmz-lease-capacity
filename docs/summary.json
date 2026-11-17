@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-17 13:21:08 UTC \u00b7 2026-11-17 18:51:08 IST",
+  "generated_at": "2026-11-17 13:24:16 UTC \u00b7 2026-11-17 18:54:16 IST",
   "duration_meta": {
     "enabled": true,
     "default_hours": 5.0,
@@ -63,11 +63,11 @@
   },
   "fingerprint": "205e31bb0aa44a3e3c5765346aa198f120f53871fe2b2bb57f04970781db9ad9",
   "source": {
-    "sha": "d1e8b9dbf76d8bd10018b3355f71fb64ee0cbd53",
-    "short_sha": "d1e8b9dbf76d",
-    "subject": "Remove unused IBM Z step-registry workflows and exclusive deps",
-    "committed_at": "2026-11-17T15:47:37+05:30",
-    "source_url": "https://github.com/openshift/release/commit/d1e8b9dbf76d8bd10018b3355f71fb64ee0cbd53"
+    "sha": "05a53d8c99f8ce9c0e902ff553737d851f87fd69",
+    "short_sha": "05a53d8c99f8",
+    "subject": "LOG-10530: Allow art-logging-tenant to use the aws-konflux-prod cluster profile (#88988)",
+    "committed_at": "2026-11-17T12:03:58Z",
+    "source_url": "https://github.com/openshift/release/commit/05a53d8c99f8ce9c0e902ff553737d851f87fd69"
   },
   "workflows": [
     {
