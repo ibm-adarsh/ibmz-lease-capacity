@@ -20,20 +20,30 @@ Interactive dashboard for **IBM Z / s390x** CI lease usage across
 - Busiest hours, free hours, and multi-hour free windows for scheduling
 - UTC / IST display toggle
 
-## Automatic refresh
+## Automatic refresh (no manual steps)
 
-GitHub Actions runs **every day at 08:00 IST** (`30 2 * * *` UTC):
+GitHub Actions runs **every morning at 08:00 IST** (`30 2 * * *` UTC) on `main`:
 
-1. Sparse-clones `openshift/release@master`
-2. Fetches Sippy average durations for relevant OCP releases
-3. Regenerates `docs/` (HTML + CSV + JSON)
-4. Commits **only when** the schedule fingerprint changes:
-   - new / removed jobs on these profiles
-   - cron / interval changes
-   - Boskos lease capacity / name changes
-   - modeled duration inputs change (Sippy / workflow / default)
+1. Sparse-clones latest `openshift/release@master`
+2. Re-scans all periodics on the `libvirt-s390x-vpn*` profiles (no hardcoded job list)
+3. Fetches Sippy full-job durations for those OCP releases
+4. Regenerates `docs/` (HTML + CSV + JSON + fingerprint)
+5. Commits and pushes whenever the generated dashboard content changed
+6. GitHub Pages redeploys from `/docs` automatically
 
-Manual run: **Actions → Update IBM Z lease dashboard → Run workflow**
+This covers, without human intervention:
+
+- **New jobs** added under these cluster profiles
+- **Removed jobs**
+- **Cron / interval timing changes**
+- **Boskos lease capacity / name changes**
+- **Sippy duration updates** (lease-hold model)
+
+Optional manual run: **Actions → Update IBM Z lease dashboard → Run workflow**
+
+> Note: GitHub may pause scheduled workflows on repos with no activity for ~60 days.
+> The daily publish commits keep this repo active; if a schedule ever pauses, re-enable
+> it under **Actions** or click **Run workflow** once.
 
 ## Local generation
 
