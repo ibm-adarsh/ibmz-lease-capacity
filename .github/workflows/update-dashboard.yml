@@ -1,0 +1,111 @@
+name: Update IBM Z lease dashboard
+
+on:
+  schedule:
+    # 08:00 India Standard Time (UTC+05:30) == 02:30 UTC
+    - cron: "30 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-dashboard
+  cancel-in-progress: true
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout dashboard repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Sparse-clone openshift/release (master)
+        run: |
+          set -euo pipefail
+          rm -rf .openshift-release
+          git clone --filter=blob:none --sparse --depth 1 \
+            https://github.com/openshift/release.git .openshift-release
+          cd .openshift-release
+          git sparse-checkout set \
+            ci-operator/config \
+            ci-operator/step-registry/cluster-profiles \
+            core-services/prow/02_config
+          echo "RELEASE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "Cloned openshift/release @ $(git rev-parse --short HEAD)"
+
+      - name: Capture previous fingerprint
+        id: prev
+        run: |
+          if [ -f docs/schedule.fingerprint ]; then
+            echo "value=$(tr -d '\n' < docs/schedule.fingerprint)" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Generate dashboard
+        run: |
+          python3 scripts/generate_report.py \
+            --release-repo .openshift-release \
+            --out-dir docs \
+            --duration-hours 5
+
+      - name: Detect schedule changes
+        id: diff
+        run: |
+          set -euo pipefail
+          NEW=$(tr -d '\n' < docs/schedule.fingerprint)
+          OLD="${{ steps.prev.outputs.value }}"
+          echo "new=$NEW" >> "$GITHUB_OUTPUT"
+          if [ "$NEW" = "$OLD" ] && [ -n "$OLD" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No job/cron/lease-capacity changes detected."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Schedule fingerprint changed (or first run)."
+            echo "old=${OLD:-<none>}"
+            echo "new=$NEW"
+          fi
+
+      - name: Commit and push updated dashboard
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/index.html docs/jobs.csv docs/summary.json docs/schedule.fingerprint
+          if git diff --cached --quiet; then
+            echo "No file content changes to commit."
+            exit 0
+          fi
+          SHORT="${RELEASE_SHA:0:12}"
+          git commit -m "$(cat <<EOF
+          chore: refresh IBM Z lease dashboard from openshift/release@${SHORT}
+
+          Auto-update at 08:00 IST when jobs, crons, or lease capacity change.
+          Fingerprint: ${{ steps.diff.outputs.new }}
+          EOF
+          )"
+          git push
+
+      - name: Write job summary
+        run: |
+          {
+            echo "## IBM Z lease dashboard refresh"
+            echo ""
+            echo "- openshift/release: \`${RELEASE_SHA:0:12}\`"
+            echo "- fingerprint: \`${{ steps.diff.outputs.new }}\`"
+            echo "- changed: \`${{ steps.diff.outputs.changed }}\`"
+            echo "- pages: https://ibm-adarsh.github.io/ibmz-lease-capacity/"
+          } >> "$GITHUB_STEP_SUMMARY"
