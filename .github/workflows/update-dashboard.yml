@@ -63,7 +63,7 @@ jobs:
             --release-repo .openshift-release \
             --out-dir docs \
             --fetch-sippy-durations \
-            --duration-hours 5 \
+            --duration-hours 4 \
             --lease-buffer-minutes 15
 
       - name: Detect schedule / duration changes
@@ -123,7 +123,7 @@ jobs:
             echo "- fingerprint: \`${{ steps.diff.outputs.new }}\`"
             echo "- schedule/duration changed: \`${{ steps.diff.outputs.schedule_changed }}\`"
             echo "- published: \`${{ steps.publish.outputs.published }}\`"
-            echo "- duration model: Sippy full-job wall-clock + workflow/default fallback"
+            echo "- duration model: Sippy successful-run wall-clock + 4h default fallback"
             echo "- pages: https://ibm-adarsh.github.io/ibmz-lease-capacity/"
             echo ""
             echo "This workflow runs daily at **08:00 IST** with no manual steps."

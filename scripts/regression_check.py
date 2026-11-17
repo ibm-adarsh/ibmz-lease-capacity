@@ -36,6 +36,8 @@ from generate_report import (  # noqa: E402
     parse_jobs,
     parse_profile_lease_map,
     parse_timeout_hours,
+    planning_minutes_from_sippy,
+    sippy_has_successful_runs,
 )
 
 
@@ -90,6 +92,46 @@ def check_ocp_version(c: Checker) -> None:
     quay = {"steps": {"env": {"BRANCH": "4.22"}}}
     ver_q = extract_ocp_version(quay, "ci-operator/config/quay/quay-operator/quay-operator-redhat-3.18__something.yaml")
     c.check(ver_q == "4.22", f"Quay BRANCH fallback got {ver_q}")
+
+
+def check_sippy_success_duration_gate(c: Checker) -> None:
+    """Fail-only Sippy averages must not drive lease-hold planning."""
+    fail_only = {
+        "current_average_duration_minutes": 65,
+        "previous_average_duration_minutes": 0,
+        "current_runs": 4,
+        "previous_runs": 0,
+        "current_passes": 0,
+        "previous_passes": 0,
+        "current_pass_percentage": 0,
+        "previous_pass_percentage": 0,
+    }
+    c.check(not sippy_has_successful_runs(fail_only), "0-pass entry should not count as success history")
+    c.check(
+        planning_minutes_from_sippy(fail_only) is None,
+        "fail-only Sippy average must be rejected (expect default hours)",
+    )
+
+    healthy = {
+        "current_average_duration_minutes": 180,
+        "previous_average_duration_minutes": 170,
+        "current_runs": 10,
+        "previous_runs": 8,
+        "current_passes": 10,
+        "previous_passes": 8,
+        "current_pass_percentage": 100,
+        "previous_pass_percentage": 100,
+    }
+    mins = planning_minutes_from_sippy(healthy)
+    c.check(mins == 180, f"healthy pass window should use current avg, got {mins}")
+
+    mixed = dict(healthy)
+    mixed["current_pass_percentage"] = 40
+    mixed["current_passes"] = 2
+    mixed["current_average_duration_minutes"] = 70  # polluted by fails
+    mixed["success_median_duration_minutes"] = 300  # ~5h successful runs
+    mins = planning_minutes_from_sippy(mixed)
+    c.check(mins == 300, f"success median must win over fail-polluted avg, got {mins}")
 
 
 def check_concurrency_math(c: Checker) -> None:
@@ -298,6 +340,7 @@ def main() -> int:
     print("== unit helpers ==")
     check_cron_helpers(c)
     check_ocp_version(c)
+    check_sippy_success_duration_gate(c)
     check_concurrency_math(c)
 
     print("== release repo ==")
