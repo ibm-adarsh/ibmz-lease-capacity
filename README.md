@@ -7,15 +7,11 @@ Interactive dashboard for **IBM Z / s390x** CI lease usage across
 
 ## What it shows
 
-- Full cluster profile names:
-  - `libvirt-s390x-vpn`
-  - `libvirt-s390x-vpn-amd64`
-  - `libvirt-s390x-vpn-arm64`
-  - `libvirt-s390x-vpn-hcp`
-  - `libvirt-s390x-vpn-oz`
+- Auto-discovered full `libvirt-s390x-vpn*` cluster profile names (including new profiles as they appear in openshift/release)
 - All periodic jobs using those profiles across OCP versions
-- Cron timing, workflow, config link, and Prow job-history link
-- Observed hold durations from [Sippy](https://sippy.dptools.openshift.org) (with workflow / default fallbacks)
+- Cron timing, workflow, config / Sippy / Prow history links
+- Observed hold durations from [Sippy](https://sippy.dptools.openshift.org) (cross-version same-job borrow, then median / timeout / default fallbacks)
+- Correct lease counts for workflows that hold more than one lease of the same type
 - Week × hour **concurrency heatmap** vs Boskos lease capacity
 - Busiest hours, free hours, and multi-hour free windows for scheduling
 - UTC / IST display toggle
@@ -25,11 +21,12 @@ Interactive dashboard for **IBM Z / s390x** CI lease usage across
 GitHub Actions runs **every morning at 08:00 IST** (`30 2 * * *` UTC) on `main`:
 
 1. Sparse-clones latest `openshift/release@master`
-2. Re-scans all periodics on the `libvirt-s390x-vpn*` profiles (no hardcoded job list)
-3. Fetches Sippy full-job durations for those OCP releases
-4. Regenerates `docs/` (HTML + CSV + JSON + fingerprint)
-5. Commits and pushes whenever the generated dashboard content changed
-6. GitHub Pages redeploys from `/docs` automatically
+2. Auto-discovers `libvirt-s390x-vpn*` profiles and re-scans all periodics (no hardcoded job list)
+3. Fetches Sippy full-job durations for those OCP releases (borrows nearest same job when a version has no history)
+4. Counts workflow-declared extra leases of the same Boskos type
+5. Regenerates `docs/` (HTML + CSV + JSON + fingerprint)
+6. Commits and pushes whenever the generated dashboard content changed
+7. GitHub Pages redeploys from `/docs` automatically
 
 This covers, without human intervention:
 
@@ -62,6 +59,12 @@ python3 scripts/generate_report.py \
 
 Then open `docs/index.html`.
 
+Regression checks (cron math, OCP labeling, lease counts, docs consistency):
+
+```bash
+python3 scripts/regression_check.py --release-repo /path/to/openshift/release --docs-dir docs
+```
+
 ## Model notes
 
 This is a **configured schedule planning model**, not live Boskos occupancy.
@@ -71,10 +74,10 @@ This is a **configured schedule planning model**, not live Boskos occupancy.
 - Example: profile capacity `10`, one job with a `3h` lease hold ⇒ for those 3 hours
   only `9` leases remain available
 - Duration preference order:
-  1. Sippy full ProwJob `current` / `previous` average minutes (biased toward the
-     longer window when failures shorten the average)
-  2. Median of Sippy-matched jobs that share the same workflow
-  3. `--duration-hours` fallback (default 5h)
+  1. Sippy full ProwJob average for the same job name (same OCP version, else nearest version with history; never install↔upgrade mix)
+  2. Median of the same job name / job family / workflow
+  3. Job timeout, then `--duration-hours` fallback (default 5h)
+- Heatmap columns are always **UTC**; IST toggle converts tooltips and free-window labels
 - A small `--lease-buffer-minutes` (default 15) is added on top of observed runtime
 - Prow cron times are **UTC** (IST toggle only changes labels)
 - `low-frequency` jobs (`@yearly` / day-of-month) are listed but excluded from the weekly heatmap

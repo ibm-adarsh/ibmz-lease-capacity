@@ -38,6 +38,8 @@ except ImportError:  # pragma: no cover
     print("ERROR: PyYAML is required (pip install pyyaml)", file=sys.stderr)
     sys.exit(1)
 
+# Fallback only if cluster-profiles-config.yaml cannot be read. Prefer
+# discover_profiles() so new libvirt-s390x-vpn* profiles appear automatically.
 DEFAULT_PROFILES = (
     "libvirt-s390x-vpn",
     "libvirt-s390x-vpn-amd64",
@@ -45,6 +47,7 @@ DEFAULT_PROFILES = (
     "libvirt-s390x-vpn-hcp",
     "libvirt-s390x-vpn-oz",
 )
+PROFILE_PREFIX = "libvirt-s390x-vpn"
 
 DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 DAY_FULL = [
@@ -144,16 +147,32 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--profiles",
         nargs="+",
-        default=list(DEFAULT_PROFILES),
-        help="Cluster profiles to include",
+        default=None,
+        help=(
+            "Cluster profiles to include (default: auto-discover every "
+            f"{PROFILE_PREFIX}* name from cluster-profiles-config.yaml)"
+        ),
     )
     parser.add_argument(
         "--write-fingerprint",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         default=True,
         help="Write schedule.fingerprint for change detection (default: on)",
     )
     return parser.parse_args()
+
+
+def discover_profiles(profiles_path: Path) -> list[str]:
+    """Discover all libvirt-s390x-vpn* cluster profile names from release config."""
+    if not profiles_path.exists():
+        return list(DEFAULT_PROFILES)
+    names: set[str] = set()
+    for match in re.finditer(
+        rf"(?m)^\s*-?\s*name:\s*({re.escape(PROFILE_PREFIX)}\S*)\s*$",
+        profiles_path.read_text(encoding="utf-8"),
+    ):
+        names.add(match.group(1).strip().strip("'\""))
+    return sorted(names) if names else list(DEFAULT_PROFILES)
 
 
 def git_metadata(release_repo: Path) -> dict[str, str]:
@@ -249,21 +268,34 @@ def parse_boskos_leases(boskos_path: Path, lease_types: set[str]) -> dict[str, l
 
 
 def extract_ocp_version(job: dict[str, Any], source_file: str) -> str:
+    """Resolve the OCP version this periodic targets.
+
+    Prefer the config filename variant (``__nightly-X.Y`` / ``__release-X.Y``).
+    For upgrade jobs, ``steps.env.BRANCH`` is the *source* release, so filename
+    must win — otherwise upgrades are labeled one release too low.
+    """
+    base = Path(str(source_file).replace("\\", "/")).name
+    for pattern in (
+        r"__nightly-(\d+\.\d+)",
+        r"__release-(\d+\.\d+)",
+        r"__ocp(\d+\.\d+)",
+        r"-ocp(\d+\.\d+)",
+    ):
+        m = re.search(pattern, base)
+        if m:
+            return m.group(1)
+
     env = job.get("steps", {}).get("env") or {}
     branch = env.get("BRANCH") or env.get("OCP_VERSION")
     if isinstance(branch, (int, float)):
         branch = str(branch)
-    if isinstance(branch, str) and re.fullmatch(r"\d+\.\d+", branch.strip('"')):
-        return branch.strip('"')
+    if isinstance(branch, str):
+        branch = branch.strip().strip("\"'")
+        if re.fullmatch(r"\d+\.\d+", branch):
+            return branch
 
-    for pattern in (
-        r"__nightly-(\d+\.\d+)",
-        r"release-(\d+\.\d+)",
-        r"ocp(\d+\.\d+)",
-        r"-(\d+\.\d+)__",
-        r"-(\d+\.\d+)\.yaml$",
-    ):
-        m = re.search(pattern, source_file)
+    for pattern in (r"release-(\d+\.\d+)", r"-(\d+\.\d+)\.yaml$"):
+        m = re.search(pattern, base)
         if m:
             return m.group(1)
     return "unknown"
@@ -296,8 +328,59 @@ def candidate_config_files(config_dir: Path, profiles: set[str]) -> list[Path]:
     return sorted(matches)
 
 
-def parse_jobs(config_dir: Path, profiles: set[str], repo: Path) -> list[dict[str, Any]]:
+def build_workflow_lease_index(step_registry: Path) -> dict[str, list[dict[str, Any]]]:
+    """Map workflow `as` name -> explicit leases[] from *-workflow.yaml files."""
+    index: dict[str, list[dict[str, Any]]] = {}
+    if not step_registry.exists():
+        return index
+    for path in step_registry.rglob("*-workflow.yaml"):
+        try:
+            data = load_yaml(path)
+        except Exception:  # noqa: BLE001
+            continue
+        if not isinstance(data, dict):
+            continue
+        root = data.get("workflow") if isinstance(data.get("workflow"), dict) else data
+        if not isinstance(root, dict):
+            continue
+        name = root.get("as") or path.name[: -len("-workflow.yaml")]
+        steps = root.get("steps") or {}
+        leases = steps.get("leases") if isinstance(steps, dict) else None
+        if name and isinstance(leases, list) and leases:
+            index[str(name)] = [l for l in leases if isinstance(l, dict)]
+    return index
+
+
+def leases_held_for_job(
+    job: dict[str, Any],
+    lease_map: dict[str, str],
+    workflow_leases: dict[str, list[dict[str, Any]]],
+) -> int:
+    """How many Boskos leases of this profile's type the job holds at once.
+
+    Cluster profile always takes 1. Workflows may declare extra leases of the
+    same resource_type (e.g. HyperShift extinfra holds a second HCP lease).
+    """
+    profile = job.get("profile") or ""
+    lease_type = lease_map.get(profile, "")
+    held = 1
+    wf = job.get("workflow") or ""
+    for entry in workflow_leases.get(wf) or []:
+        if entry.get("resource_type") == lease_type:
+            held += 1
+    return held
+
+
+def parse_jobs(
+    config_dir: Path,
+    profiles: set[str],
+    repo: Path,
+    lease_map: dict[str, str] | None = None,
+    workflow_leases: dict[str, list[dict[str, Any]]] | None = None,
+) -> list[dict[str, Any]]:
     jobs: list[dict[str, Any]] = []
+    lease_map = lease_map or {}
+    workflow_leases = workflow_leases or {}
     candidates = candidate_config_files(config_dir, profiles)
     print(f"  candidate config files: {len(candidates)}", flush=True)
     for path in candidates:
@@ -324,26 +407,26 @@ def parse_jobs(config_dir: Path, profiles: set[str], repo: Path) -> list[dict[st
             if profile not in profiles:
                 continue
             cron = test.get("cron")
-            interval = test.get("interval")
+            interval = test.get("interval") or test.get("minimum_interval")
             if not cron and not interval:
                 continue
             as_name = test.get("as", "")
             workflow = steps.get("workflow")
             timeout = test.get("timeout")
             prow_name = construct_prow_job_name(rel, str(as_name))
-            jobs.append(
-                {
-                    "as": as_name,
-                    "profile": profile,
-                    "cron": str(cron).strip("'\"") if cron is not None else None,
-                    "interval": str(interval) if interval is not None else None,
-                    "timeout": str(timeout) if timeout is not None else None,
-                    "workflow": workflow,
-                    "source_file": rel,
-                    "ocp_version": extract_ocp_version(test, str(path)),
-                    "prow_job_name": prow_name,
-                }
-            )
+            job = {
+                "as": as_name,
+                "profile": profile,
+                "cron": str(cron).strip("'\"") if cron is not None else None,
+                "interval": str(interval) if interval is not None else None,
+                "timeout": str(timeout) if timeout is not None else None,
+                "workflow": workflow,
+                "source_file": rel,
+                "ocp_version": extract_ocp_version(test, rel),
+                "prow_job_name": prow_name,
+            }
+            job["leases_held"] = leases_held_for_job(job, lease_map, workflow_leases)
+            jobs.append(job)
     return jobs
 
 
@@ -358,7 +441,7 @@ def parse_field(field: str, lo: int, hi: int) -> list[int]:
         step = 1
         if "/" in piece:
             base, step_s = piece.split("/", 1)
-            step = int(step_s)
+            step = max(1, int(step_s))
         else:
             base = piece
         if base in ("*", "?"):
@@ -367,12 +450,23 @@ def parse_field(field: str, lo: int, hi: int) -> list[int]:
             a, b = base.split("-", 1)
             start, end = int(a), int(b)
         else:
-            values.add(int(base))
-            continue
+            # N or N/step → N, N+step, … hi
+            start = int(base)
+            end = hi if "/" in piece else start
+        if start > end:
+            start, end = end, start
         for n in range(start, end + 1, step):
             if lo <= n <= hi:
                 values.add(n)
     return sorted(values)
+
+
+def parse_dow_field(field: str) -> list[int]:
+    """Parse cron day-of-week; accept 0–6 and Sunday as 7."""
+    if field in ("*", "?"):
+        return list(range(7))
+    raw = parse_field(field, 0, 7)
+    return sorted({0 if d == 7 else d for d in raw})
 
 
 def _format_english_list(items: list[str]) -> str:
@@ -450,15 +544,12 @@ def cron_to_english(expr: str | None) -> str:
         hours = parse_field(hour_s, 0, 23)
         doms = [] if dom_s in ("*", "?") else parse_field(dom_s, 1, 31)
         mons = [] if mon_s in ("*", "?") else parse_field(mon_s, 1, 12)
-        if dow_s in ("*", "?"):
-            dows = list(range(7))
-        else:
-            dows = parse_field(dow_s.replace("7", "0"), 0, 6)
-            dows = sorted({0 if d == 7 else d for d in dows})
+        dows = parse_dow_field(dow_s)
     except ValueError:
         return f"Custom schedule ({expr})"
 
     time_bit = _describe_times(minutes, hours)
+    dow_restricted = dow_s not in ("*", "?")
     if doms or mons:
         month_bit = (
             _format_english_list([MONTH_NAMES[m - 1] for m in mons]) if mons else "every month"
@@ -472,6 +563,8 @@ def cron_to_english(expr: str | None) -> str:
             text = f"On the {day_bit} of every month {time_bit}"
         else:
             text = f"On the {day_bit} of {month_bit} {time_bit}"
+        if dow_restricted and set(dows) != set(range(7)):
+            text += f" or every {_describe_days(dows)}"
     elif set(dows) == set(range(7)):
         text = f"Every day {time_bit}"
     else:
@@ -494,23 +587,44 @@ def classify_and_expand_cron(expr: str) -> tuple[str, list[tuple[int, int, int]]
 
     minute_s, hour_s, dom_s, mon_s, dow_s = parts
 
-    if dom_s not in ("*", "?") or mon_s not in ("*", "?"):
-        return "low-frequency", []
-
     try:
         minutes = parse_field(minute_s, 0, 59)
         hours = parse_field(hour_s, 0, 23)
-        dow_raw = (
-            parse_field(dow_s.replace("7", "0"), 0, 6)
-            if dow_s not in ("*", "?")
-            else list(range(7))
-        )
-        dows = sorted(set(0 if d == 7 else d for d in dow_raw))
+        dows = parse_dow_field(dow_s)
     except ValueError:
         return "invalid", []
 
+    has_dom = dom_s not in ("*", "?")
+    has_mon = mon_s not in ("*", "?")
+    has_dow = dow_s not in ("*", "?")
+
+    # Month-restricted or DOM-only → not modeled on the weekly grid.
+    if has_mon or (has_dom and not has_dow):
+        return "low-frequency", []
+
+    # Pure DOW, or DOM+DOW (cron OR): include weekday slots (safe over-count).
     slots = [(d, h, m) for d in dows for h in hours for m in minutes]
     schedule_class = "daily" if set(dows) == set(range(7)) else "weekly"
+    return schedule_class, slots
+
+
+def expand_interval(interval: str) -> tuple[str, list[tuple[int, int, int]]]:
+    """Spread an interval/minimum_interval across one week of planning slots."""
+    hours = parse_timeout_hours(interval)
+    if not hours or hours <= 0:
+        return "invalid", []
+    week_min = 7 * 24 * 60
+    step = max(1, int(round(hours * 60)))
+    if step >= week_min:
+        return "low-frequency", []
+    slots: list[tuple[int, int, int]] = []
+    t = 0
+    while t < week_min:
+        d, rem = divmod(t, 24 * 60)
+        h, m = divmod(rem, 60)
+        slots.append((d, h, m))
+        t += step
+    schedule_class = "daily" if hours <= 24 else "weekly"
     return schedule_class, slots
 
 
@@ -534,8 +648,8 @@ def parse_timeout_hours(timeout: str | None) -> float | None:
 
 
 def round_duration_hours(hours: float) -> float:
-    """Round to 15-minute planning buckets."""
-    return max(0.25, round(hours * 4) / 4.0)
+    """Round to 15-minute planning buckets (half-up, not banker's rounding)."""
+    return max(0.25, int(hours * 4 + 0.5) / 4.0)
 
 
 def fetch_sippy_jobs_for_release(release: str, timeout: float = 60.0) -> list[dict[str, Any]]:
@@ -617,11 +731,13 @@ def planning_minutes_from_sippy(entry: dict[str, Any]) -> float | None:
         prev = 0.0
     if cur <= 0 and prev <= 0:
         return None
-    # When many current runs fail early, prefer the healthier previous window.
-    if cur > 0 and prev > 0 and pass_pct is not None and float(pass_pct) < 80:
-        if cur < prev * 0.85:
-            return prev
+    # Prefer the current window when it looks healthy; otherwise keep the
+    # longer of current/previous so early infra fails do not under-count holds.
     if cur > 0 and prev > 0:
+        if pass_pct is not None and float(pass_pct) < 80 and cur < prev * 0.85:
+            return prev
+        if cur_runs >= 3:
+            return cur
         return max(cur, prev)
     return cur or prev
 
@@ -633,18 +749,55 @@ def _release_tuple(release: str) -> tuple[int, ...]:
         return (0,)
 
 
+def _release_distance(a: str, b: str) -> int:
+    ta, tb = _release_tuple(a), _release_tuple(b)
+    n = max(len(ta), len(tb))
+    ta = ta + (0,) * (n - len(ta))
+    tb = tb + (0,) * (n - len(tb))
+    # Weight major heavily so 4.23 vs 5.0 is far, 4.12 vs 4.14 is near.
+    dist = 0
+    for i, (x, y) in enumerate(zip(ta, tb)):
+        dist += abs(x - y) * (100 ** (n - 1 - i))
+    return dist
+
+
 def _sippy_entry_usable(entry: dict[str, Any] | None) -> bool:
     return bool(entry) and planning_minutes_from_sippy(entry) is not None
 
 
-def _best_sippy_entry(candidates: list[dict[str, Any]]) -> dict[str, Any] | None:
-    usable = [c for c in candidates if _sippy_entry_usable(c)]
+def _is_upgrade_token(text: str | None) -> bool:
+    return "upgrade" in (text or "").lower()
+
+
+def _sippy_compatible(job: dict[str, Any], entry: dict[str, Any]) -> bool:
+    """Reject install↔upgrade mismatches when borrowing durations."""
+    job_name = job.get("prow_job_name") or ""
+    entry_name = entry.get("name") or ""
+    job_up = _is_upgrade_token(job_name) or _is_upgrade_token(job.get("as"))
+    entry_up = _is_upgrade_token(entry_name) or _is_upgrade_token(entry.get("brief_name"))
+    return job_up == entry_up
+
+
+def _best_sippy_entry(
+    candidates: list[dict[str, Any]],
+    *,
+    prefer_release: str | None = None,
+    job: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    usable = [
+        c
+        for c in candidates
+        if _sippy_entry_usable(c) and (job is None or _sippy_compatible(job, c))
+    ]
     if not usable:
         return None
 
     def score(c: dict[str, Any]) -> tuple:
+        dist = _release_distance(prefer_release or "", str(c.get("release") or "")) if prefer_release else 0
+        runs = int(c.get("current_runs") or 0) + int(c.get("previous_runs") or 0)
         return (
-            int(c.get("current_runs") or 0) + int(c.get("previous_runs") or 0),
+            -dist,
+            runs,
             _release_tuple(str(c.get("release") or "")),
             float(c.get("current_average_duration_minutes") or 0),
         )
@@ -652,18 +805,29 @@ def _best_sippy_entry(candidates: list[dict[str, Any]]) -> dict[str, Any] | None
     return max(usable, key=score)
 
 
+def _swap_prow_version(prow: str, target_release: str) -> str | None:
+    """Replace the first nightly-X.Y / release-X.Y token in a Prow job name."""
+    if not prow or not target_release:
+        return None
+    for pat in (r"(nightly-)\d+\.\d+", r"(release-)\d+\.\d+"):
+        rewritten, n = re.subn(pat, rf"\g<1>{target_release}", prow, count=1)
+        if n:
+            return rewritten
+    return None
+
+
 def match_sippy_entry(job: dict[str, Any], index: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
     """Match a configured job to Sippy runtime stats.
 
     Prefer the same OCP version when it has usable history. If that version has
-    no Sippy runs (common for older releases like 4.12), reuse the same job
-    brief/name from another OCP version that does have data.
+    no Sippy runs, reuse the same job identity from the nearest OCP version that
+    does — never cross install↔upgrade boundaries.
     """
     by_name: dict[str, dict[str, Any]] = index.get("by_name") or {}
     by_brief: dict[str, list[dict[str, Any]]] = index.get("by_brief") or {}
     by_release_brief: dict[tuple[str, str], dict[str, Any]] = index.get("by_release_brief") or {}
 
-    prow = job.get("prow_job_name")
+    prow = job.get("prow_job_name") or ""
     release = job.get("ocp_version") or ""
     brief = job.get("as") or ""
 
@@ -672,29 +836,37 @@ def match_sippy_entry(job: dict[str, Any], index: dict[str, Any]) -> tuple[dict[
 
     if release and brief:
         same_release = by_release_brief.get((release, brief))
-        if _sippy_entry_usable(same_release):
+        if _sippy_entry_usable(same_release) and _sippy_compatible(job, same_release):
             return same_release, "sippy-brief-release"
+
+    # Same Prow identity with only the nightly/release version token changed.
+    if prow:
+        rewrite_hits: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        releases = {
+            str(e.get("release") or "")
+            for e in by_name.values()
+            if e.get("release")
+        }
+        for rel in releases:
+            if rel == release:
+                continue
+            cand = _swap_prow_version(prow, rel)
+            if not cand or cand in seen:
+                continue
+            seen.add(cand)
+            entry = by_name.get(cand)
+            if entry is not None:
+                rewrite_hits.append(entry)
+        best_rewrite = _best_sippy_entry(rewrite_hits, prefer_release=release, job=job)
+        if best_rewrite is not None:
+            return best_rewrite, "sippy-brief"
 
     if brief and brief in by_brief:
         candidates = by_brief[brief]
-        same = [c for c in candidates if c.get("release") == release]
-        best_same = _best_sippy_entry(same)
-        if best_same is not None:
-            return best_same, "sippy-brief-release"
-        best_other = _best_sippy_entry(candidates)
-        if best_other is not None:
-            return best_other, "sippy-brief"
-
-    if prow or brief:
-        # Suffix fallback across indexed names (upgrade variants, etc.).
-        suffix = f"-{brief}" if brief else None
-        pool: list[dict[str, Any]] = []
-        for name, entry in by_name.items():
-            if name == prow or (suffix and name.endswith(suffix)):
-                pool.append(entry)
-        best = _best_sippy_entry(pool)
+        best = _best_sippy_entry(candidates, prefer_release=release, job=job)
         if best is not None:
-            how = "sippy-name" if best.get("name") == prow else "sippy-suffix"
+            how = "sippy-brief-release" if best.get("release") == release else "sippy-brief"
             return best, how
 
     return None, ""
@@ -731,10 +903,21 @@ def workflow_median_hours(jobs: list[dict[str, Any]]) -> dict[str, float]:
     return {wf: statistics.median(vals) for wf, vals in buckets.items() if vals}
 
 
-def apply_lease_hold_hours(job: dict[str, Any], hours: float, buffer_minutes: float) -> None:
+def apply_lease_hold_hours(
+    job: dict[str, Any],
+    hours: float,
+    buffer_minutes: float,
+    *,
+    max_hours: float | None = None,
+) -> None:
     """Store observed runtime and lease-hold hours (observed + release buffer)."""
     observed = round_duration_hours(hours)
     hold = round_duration_hours(observed + (buffer_minutes / 60.0))
+    timeout_h = parse_timeout_hours(job.get("timeout"))
+    if timeout_h:
+        hold = min(hold, round_duration_hours(timeout_h))
+    if max_hours is not None:
+        hold = min(hold, max_hours)
     job["observed_duration_hours"] = observed
     job["duration_hours"] = hold  # used by concurrency model = leases unavailable
     job["duration_minutes"] = int(round(hold * 60))
@@ -790,10 +973,9 @@ def enrich_job_durations(
         if entry and minutes:
             hours = minutes / 60.0
             hours = min(max(hours, min_hours), max_hours)
-            timeout_h = parse_timeout_hours(job.get("timeout"))
-            if timeout_h:
-                hours = min(hours, timeout_h)
-            apply_lease_hold_hours(job, hours, lease_buffer_minutes)
+            apply_lease_hold_hours(
+                job, hours, lease_buffer_minutes, max_hours=max_hours
+            )
             job["duration_source"] = how
             matched_name = entry.get("name") or ""
             matched_release = entry.get("release") or ""
@@ -827,46 +1009,93 @@ def enrich_job_durations(
             job["duration_source"] = None
             job["sippy"] = None
 
-    # Workflow medians are computed from observed (pre-buffer) hours so the
-    # buffer is not double-applied for fallbacks.
-    buckets: dict[str, list[float]] = defaultdict(list)
+    def job_kind(job: dict[str, Any]) -> str:
+        prow = job.get("prow_job_name") or ""
+        as_name = job.get("as") or ""
+        return "upgrade" if _is_upgrade_token(prow) or _is_upgrade_token(as_name) else "install"
+
+    def duration_family(job: dict[str, Any]) -> str:
+        as_name = job.get("as") or ""
+        wf = job.get("workflow") or ""
+        return f"{as_name}|{job_kind(job)}|{wf}"
+
+    # Medians from observed (pre-buffer) hours so the buffer is not double-applied.
+    # Key same-job medians by (as, kind) so install and upgrade never mix.
+    by_as_kind: dict[tuple[str, str], list[float]] = defaultdict(list)
+    by_family: dict[str, list[float]] = defaultdict(list)
+    by_workflow_kind: dict[tuple[str, str], list[float]] = defaultdict(list)
     for job in jobs:
         source = job.get("duration_source") or ""
-        if source.startswith("sippy") and job.get("observed_duration_hours"):
-            wf = job.get("workflow") or ""
-            if wf:
-                buckets[wf].append(float(job["observed_duration_hours"]))
-    wf_medians = {wf: statistics.median(vals) for wf, vals in buckets.items() if vals}
-    meta["workflow_medians_hours"] = {k: round(v, 2) for k, v in sorted(wf_medians.items())}
+        if not (source.startswith("sippy") and job.get("observed_duration_hours")):
+            continue
+        obs = float(job["observed_duration_hours"])
+        kind = job_kind(job)
+        if job.get("as"):
+            by_as_kind[(str(job["as"]), kind)].append(obs)
+        by_family[duration_family(job)].append(obs)
+        if job.get("workflow"):
+            by_workflow_kind[(str(job["workflow"]), kind)].append(obs)
+    as_medians = {k: statistics.median(v) for k, v in by_as_kind.items() if v}
+    family_medians = {k: statistics.median(v) for k, v in by_family.items() if v}
+    wf_medians = {k: statistics.median(v) for k, v in by_workflow_kind.items() if v}
+    meta["workflow_medians_hours"] = {
+        f"{wf}|{kind}": round(v, 2) for (wf, kind), v in sorted(wf_medians.items())
+    }
+    meta["as_medians_hours"] = {
+        f"{as_name}|{kind}": round(v, 2) for (as_name, kind), v in sorted(as_medians.items())
+    }
 
-    # Raise suspiciously short Sippy averages (often early infra fails) toward
-    # the workflow median so capacity planning does not under-count holds.
+    def fallback_hours_for(job: dict[str, Any]) -> tuple[float | None, str]:
+        as_name = job.get("as") or ""
+        kind = job_kind(job)
+        if (as_name, kind) in as_medians:
+            return as_medians[(as_name, kind)], "as-median"
+        fam = duration_family(job)
+        if fam in family_medians:
+            return family_medians[fam], "family-median"
+        wf = job.get("workflow") or ""
+        if (wf, kind) in wf_medians:
+            return wf_medians[(wf, kind)], "workflow-median"
+        timeout_h = parse_timeout_hours(job.get("timeout"))
+        if timeout_h:
+            return timeout_h, "timeout"
+        return None, ""
+
+    # Raise suspiciously short Sippy averages toward the same-job / family floor.
     for job in jobs:
         source = job.get("duration_source") or ""
         if not source.startswith("sippy"):
             continue
-        wf = job.get("workflow") or ""
-        if wf not in wf_medians:
+        floor, floor_src = fallback_hours_for(job)
+        if floor is None or not floor_src.endswith("median"):
             continue
         current = float(job.get("observed_duration_hours") or 0)
-        floor = wf_medians[wf]
         if current > 0 and current < max(1.0, floor * 0.5):
             raised = min(max(floor, min_hours), max_hours)
-            apply_lease_hold_hours(job, raised, lease_buffer_minutes)
-            job["duration_source"] = "sippy+workflow-floor"
+            apply_lease_hold_hours(
+                job, raised, lease_buffer_minutes, max_hours=max_hours
+            )
+            job["duration_source"] = "sippy+median-floor"
 
-    # Second pass: workflow / default fallbacks
+    # Second pass: same-job / family / workflow / timeout / default fallbacks
     for job in jobs:
         if job.get("duration_hours") is not None:
             continue
-        wf = job.get("workflow") or ""
-        if wf in wf_medians:
-            hours = min(max(wf_medians[wf], min_hours), max_hours)
-            apply_lease_hold_hours(job, hours, lease_buffer_minutes)
-            job["duration_source"] = "workflow-median"
-            meta["workflow_fallback"] += 1
+        hours, how = fallback_hours_for(job)
+        if hours is not None:
+            hours = min(max(hours, min_hours), max_hours)
+            apply_lease_hold_hours(
+                job, hours, lease_buffer_minutes, max_hours=max_hours
+            )
+            job["duration_source"] = how
+            if how.endswith("median"):
+                meta["workflow_fallback"] += 1
+            else:
+                meta["default_fallback"] += 1
         else:
-            apply_lease_hold_hours(job, default_hours, lease_buffer_minutes)
+            apply_lease_hold_hours(
+                job, default_hours, lease_buffer_minutes, max_hours=max_hours
+            )
             job["duration_source"] = "default"
             meta["default_fallback"] += 1
 
@@ -879,9 +1108,9 @@ def build_concurrency(
 ) -> tuple[list[list[int]], list[list[list[dict[str, Any]]]]]:
     """Build 7x24 lease-occupancy grid.
 
-    Each scheduled job occupies exactly 1 lease from cron start for its modeled
-    lease-hold duration (full job wall-clock: pre → test → post + buffer).
-    Example: capacity 10 and one 3h job ⇒ that hour has demand 1 / available 9.
+    Each scheduled job occupies ``leases_held`` leases (usually 1; some
+    workflows hold extras of the same Boskos type) for its modeled lease-hold
+    duration (full job wall-clock: pre → test → post + buffer).
     """
     week_min = 7 * 24 * 60
     demand = [[0 for _ in range(24)] for _ in range(7)]
@@ -892,6 +1121,7 @@ def build_concurrency(
             continue
         duration_hours = float(job.get("duration_hours") or default_duration_hours)
         duration_min = max(1, int(round(duration_hours * 60)))
+        leases_held = max(1, int(job.get("leases_held") or 1))
         detail = {
             "as": job["as"],
             "ocp_version": job["ocp_version"],
@@ -902,6 +1132,7 @@ def build_concurrency(
             "duration_hours": duration_hours,
             "observed_duration_hours": job.get("observed_duration_hours"),
             "duration_source": job.get("duration_source"),
+            "leases_held": leases_held,
         }
         for dow, hour, minute in job.get("slots") or []:
             start = minutes_in_week(dow, hour, minute)
@@ -917,7 +1148,7 @@ def build_concurrency(
                 next_hour = ((abs_t // 60) + 1) * 60
                 t += next_hour - abs_t
             for d, h in covered_hours:
-                demand[d][h] += 1
+                demand[d][h] += leases_held
                 details[d][h].append(entry)
     return demand, details
 
@@ -1017,6 +1248,7 @@ def write_csv(
         "schedule_class",
         "timeout",
         "workflow",
+        "leases_held",
         "observed_duration_hours",
         "duration_hours",
         "lease_buffer_minutes",
@@ -1024,6 +1256,7 @@ def write_csv(
         "sippy_planning_min",
         "sippy_current_avg_min",
         "sippy_runs",
+        "sippy_donor_release",
         "prow_job_name",
         "source_file",
         "weekly_starts",
@@ -1047,6 +1280,7 @@ def write_csv(
                     "schedule_class": job.get("schedule_class", ""),
                     "timeout": job["timeout"] or "",
                     "workflow": job["workflow"] or "",
+                    "leases_held": job.get("leases_held") or 1,
                     "observed_duration_hours": job.get("observed_duration_hours") or "",
                     "duration_hours": job.get("duration_hours") or "",
                     "lease_buffer_minutes": job.get("lease_buffer_minutes")
@@ -1056,6 +1290,7 @@ def write_csv(
                     "sippy_planning_min": sippy.get("planning_min", ""),
                     "sippy_current_avg_min": sippy.get("current_avg_min", ""),
                     "sippy_runs": sippy.get("current_runs", ""),
+                    "sippy_donor_release": sippy.get("release", ""),
                     "prow_job_name": job.get("prow_job_name") or "",
                     "source_file": job["source_file"],
                     "weekly_starts": len(job.get("slots") or []),
@@ -1081,6 +1316,10 @@ def schedule_fingerprint(
         names = ",".join(leases.get(lt, []))
         rows.append(f"lease|{profile}|{lt}|{len(leases.get(lt, []))}|{names}")
     for job in sorted(jobs, key=lambda j: (j["profile"], j["as"], j["source_file"])):
+        sippy = job.get("sippy") or {}
+        slots = ";".join(
+            f"{d}:{h:02d}:{m:02d}" for d, h, m in (job.get("slots") or [])
+        )
         rows.append(
             "|".join(
                 [
@@ -1093,8 +1332,12 @@ def schedule_fingerprint(
                     job.get("workflow") or "",
                     job.get("source_file") or "",
                     job.get("timeout") or "",
+                    str(job.get("leases_held") or 1),
+                    slots,
                     str(job.get("duration_hours") or ""),
                     job.get("duration_source") or "",
+                    str(sippy.get("name") or ""),
+                    str(sippy.get("release") or ""),
                 ]
             )
         )
@@ -1137,9 +1380,9 @@ def render_html(
                 "low_frequency_job_count": info["low_frequency_job_count"],
                 "demand": info["demand"],
                 "details": info["details"],
-                "busiest": info["busiest"][:20],
-                "free": info["free"][:40],
-                "free_blocks": info["free_blocks"][:12],
+                "busiest": info["busiest"][:48],
+                "free": info["free"][:48],
+                "free_blocks": info["free_blocks"][:16],
                 "peak_demand": info["peak_demand"],
                 "overcommit_hours": info["overcommit_hours"],
                 "median_duration_hours": info["median_duration_hours"],
@@ -1677,8 +1920,10 @@ table.jobs tbody tr:hover, table.wf tbody tr:hover {{ background: rgba(15, 98, 2
       <p class="eyebrow">Weekly view</p>
       <h2>Concurrency heatmap</h2>
       <p class="panel-lead">
-        Each cell is concurrent leases in use during that UTC hour (one lease per overlapping job).
-        Hold time = full job wall-clock (pre/test/post) + lease buffer. Click a cell for overlapping jobs and remaining availability.
+        Each cell is concurrent leases in use during that <strong>UTC</strong> hour
+        (most jobs hold 1 lease; some workflows hold more of the same type).
+        Hold time = full job wall-clock (pre/test/post) + lease buffer. Columns stay UTC even when
+        the IST toggle is on — tooltips and free-window labels convert. Click a cell for details.
       </p>
     </div>
     <div class="heatmap-wrap">
@@ -1761,8 +2006,8 @@ table.jobs tbody tr:hover, table.wf tbody tr:hover {{ background: rgba(15, 98, 2
       <select id="filter-duration">
         <option value="">All duration sources</option>
         <option value="sippy">Sippy observed</option>
-        <option value="workflow">Workflow median</option>
-        <option value="default">Default fallback</option>
+        <option value="workflow">Median fallback</option>
+        <option value="default">Default / timeout</option>
       </select>
     </div>
     <div class="jobs-wrap">
@@ -1835,12 +2080,9 @@ function cellClass(demand, capacity) {{
 }}
 
 function formatHourLabel(hour) {{
-  if (tz === 'UTC') return String(hour).padStart(2, '0');
-  // UTC hour start → IST clock (UTC+5:30)
-  const total = hour * 60 + 5 * 60 + 30;
-  const hh = Math.floor((total % (24 * 60)) / 60);
-  const mm = total % 60;
-  return String(hh).padStart(2,'0') + ':' + String(mm).padStart(2,'0');
+  // Heatmap columns are always cron UTC hours so day rows stay aligned.
+  // IST mode is applied in tooltips / free-window labels via formatSlot.
+  return String(hour).padStart(2, '0');
 }}
 
 function formatSlot(day, hour) {{
@@ -1866,8 +2108,16 @@ function durationPill(j) {{
     const label = sippy.borrowed && sippy.release ? `sippy·${{sippy.release}}` : 'sippy';
     return `<span class="pill sippy" title="${{from}}">${{label}}</span>`;
   }}
-  if (source === 'workflow-median') {{
-    return '<span class="pill workflow" title="No Sippy history for this job on any indexed OCP version; using workflow median">workflow</span>';
+  if (source === 'as-median' || source === 'family-median' || source === 'workflow-median') {{
+    const tip = source === 'as-median'
+      ? 'No Sippy history for this OCP version; using median of the same job name'
+      : source === 'family-median'
+        ? 'No Sippy history; using median of the same job family'
+        : 'No Sippy history for this job on any indexed OCP version; using workflow median';
+    return `<span class="pill workflow" title="${{tip}}">workflow</span>`;
+  }}
+  if (source === 'timeout') {{
+    return '<span class="pill default" title="No Sippy sample; using job timeout">timeout</span>';
   }}
   return '<span class="pill default" title="No Sippy/workflow sample; using configured default">default</span>';
 }}
@@ -1987,13 +2237,15 @@ function renderSlots(p) {{
   const blocks = document.getElementById('free-blocks');
   const free = document.getElementById('free-slots');
   const busy = document.getElementById('busy-slots');
-  blocks.innerHTML = (p.free_blocks || []).map(b =>
-    `<li><span>${{formatSlot(b.day, b.start_hour)}} → ${{String(b.end_hour).padStart(2,'0')}}:00 (${{b.hours}}h)</span><span class="badge">≥${{b.min_spare}} leases free</span></li>`
-  ).join('') || '<li style="color:var(--muted)">No multi-hour free windows under current model.</li>';
-  free.innerHTML = p.free.slice(0, 18).map(c =>
+  blocks.innerHTML = (p.free_blocks || []).map(b => {{
+    const endDay = b.end_hour >= 24 ? DATA.day_names[(b.dow + 1) % 7] : b.day;
+    const endHour = b.end_hour % 24;
+    return `<li><span>${{formatSlot(b.day, b.start_hour)}} → ${{formatSlot(endDay, endHour)}} (${{b.hours}}h)</span><span class="badge">≥${{b.min_spare}} leases free</span></li>`;
+  }}).join('') || '<li style="color:var(--muted)">No multi-hour free windows under current model.</li>';
+  free.innerHTML = (p.free || []).map(c =>
     `<li><span>${{formatSlot(c.day, c.hour)}}</span><span class="badge">${{c.demand}} in use · ${{c.spare}} available</span></li>`
   ).join('') || '<li style="color:var(--muted)">No free capacity under current model.</li>';
-  busy.innerHTML = p.busiest.slice(0, 18).map(c =>
+  busy.innerHTML = (p.busiest || []).map(c =>
     `<li><span>${{formatSlot(c.day, c.hour)}}</span><span class="badge">${{c.demand}} in use / ${{c.capacity}} · ${{c.spare}} free</span></li>`
   ).join('');
   [blocks, free, busy].forEach(wireSlotScroll);
@@ -2028,8 +2280,8 @@ function renderJobs(p) {{
     if (ver && j.ocp_version !== ver) return false;
     if (cls && j.schedule_class !== cls) return false;
     if (dsrc === 'sippy' && !(j.duration_source || '').startsWith('sippy')) return false;
-    if (dsrc === 'workflow' && j.duration_source !== 'workflow-median') return false;
-    if (dsrc === 'default' && j.duration_source !== 'default') return false;
+    if (dsrc === 'workflow' && !['workflow-median','as-median','family-median'].includes(j.duration_source)) return false;
+    if (dsrc === 'default' && !['default','timeout'].includes(j.duration_source)) return false;
     if (!q) return true;
     const hay = [j.as, j.cron || '', j.cron_english || '', j.workflow || '', j.source_file, j.ocp_version, j.prow_job_name || ''].join(' ').toLowerCase();
     return hay.includes(q);
@@ -2093,8 +2345,6 @@ def main() -> int:
     args = parse_args()
     release_repo: Path = args.release_repo.resolve()
     out_dir: Path = args.out_dir.resolve()
-    profiles = list(dict.fromkeys(args.profiles))
-    profile_set = set(profiles)
 
     config_dir = release_repo / "ci-operator" / "config"
     boskos_path = release_repo / "core-services" / "prow" / "02_config" / "_boskos.yaml"
@@ -2105,17 +2355,25 @@ def main() -> int:
         / "cluster-profiles"
         / "cluster-profiles-config.yaml"
     )
+    step_registry = release_repo / "ci-operator" / "step-registry"
 
     for required in (config_dir, boskos_path, profiles_path):
         if not required.exists():
             print(f"ERROR: missing {required}", file=sys.stderr)
             return 1
 
+    if args.profiles:
+        profiles = list(dict.fromkeys(args.profiles))
+    else:
+        profiles = discover_profiles(profiles_path)
+    profile_set = set(profiles)
+
     source_meta = git_metadata(release_repo)
     print(
         f"openshift/release @ {source_meta['short_sha']} {source_meta.get('subject', '')}",
         flush=True,
     )
+    print(f"Profiles ({len(profiles)}): {', '.join(profiles)}", flush=True)
 
     print("Parsing cluster profile lease map …", flush=True)
     lease_map = parse_profile_lease_map(profiles_path, profile_set)
@@ -2127,15 +2385,26 @@ def main() -> int:
     print("Parsing Boskos lease inventory …", flush=True)
     leases = parse_boskos_leases(boskos_path, lease_types)
 
+    print("Indexing workflow lease declarations …", flush=True)
+    workflow_leases = build_workflow_lease_index(step_registry)
+    if workflow_leases:
+        print(f"  workflows with explicit leases: {len(workflow_leases)}", flush=True)
+
     print(f"Parsing jobs under {config_dir} …", flush=True)
-    jobs = parse_jobs(config_dir, profile_set, release_repo)
+    jobs = parse_jobs(
+        config_dir,
+        profile_set,
+        release_repo,
+        lease_map=lease_map,
+        workflow_leases=workflow_leases,
+    )
 
     for job in jobs:
         if job["cron"]:
             schedule_class, slots = classify_and_expand_cron(job["cron"])
             job["cron_english"] = cron_to_english(job["cron"])
         elif job["interval"]:
-            schedule_class, slots = "interval-like", []
+            schedule_class, slots = expand_interval(job["interval"])
             job["cron_english"] = f"Every {job['interval']}"
         else:
             schedule_class, slots = "invalid", []
@@ -2204,6 +2473,7 @@ def main() -> int:
                     "duration_hours": j.get("duration_hours"),
                     "lease_buffer_minutes": j.get("lease_buffer_minutes"),
                     "duration_source": j.get("duration_source"),
+                    "leases_held": j.get("leases_held") or 1,
                     "prow_job_name": j.get("prow_job_name"),
                     "sippy": j.get("sippy"),
                 }
@@ -2248,7 +2518,8 @@ def main() -> int:
         },
     }
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
-    (out_dir / "schedule.fingerprint").write_text(fingerprint + "\n", encoding="utf-8")
+    if args.write_fingerprint:
+        (out_dir / "schedule.fingerprint").write_text(fingerprint + "\n", encoding="utf-8")
 
     render_html(
         out_dir / "index.html",
