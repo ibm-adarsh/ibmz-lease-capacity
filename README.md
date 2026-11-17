@@ -46,7 +46,8 @@ python3 scripts/generate_report.py \
   --release-repo /path/to/openshift/release \
   --out-dir docs \
   --fetch-sippy-durations \
-  --duration-hours 5
+  --duration-hours 5 \
+  --lease-buffer-minutes 15
 ```
 
 Then open `docs/index.html`.
@@ -55,11 +56,16 @@ Then open `docs/index.html`.
 
 This is a **configured schedule planning model**, not live Boskos occupancy.
 
-- Each periodic holds **1 lease** for a modeled duration after each cron start
+- Each periodic acquires **1 lease at job start** and keeps it for the modeled
+  **full job wall-clock** (pre → test → post), not the test phase alone
+- Example: profile capacity `10`, one job with a `3h` lease hold ⇒ for those 3 hours
+  only `9` leases remain available
 - Duration preference order:
-  1. Sippy `current` / `previous` average minutes (conservative max)
+  1. Sippy full ProwJob `current` / `previous` average minutes (biased toward the
+     longer window when failures shorten the average)
   2. Median of Sippy-matched jobs that share the same workflow
   3. `--duration-hours` fallback (default 5h)
+- A small `--lease-buffer-minutes` (default 15) is added on top of observed runtime
 - Prow cron times are **UTC** (IST toggle only changes labels)
 - `low-frequency` jobs (`@yearly` / day-of-month) are listed but excluded from the weekly heatmap
 - Presubmits are excluded
