@@ -23,6 +23,7 @@ import statistics
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -625,49 +626,98 @@ def planning_minutes_from_sippy(entry: dict[str, Any]) -> float | None:
     return cur or prev
 
 
+def _release_tuple(release: str) -> tuple[int, ...]:
+    try:
+        return tuple(int(x) for x in (release or "0").split("."))
+    except ValueError:
+        return (0,)
+
+
+def _sippy_entry_usable(entry: dict[str, Any] | None) -> bool:
+    return bool(entry) and planning_minutes_from_sippy(entry) is not None
+
+
+def _best_sippy_entry(candidates: list[dict[str, Any]]) -> dict[str, Any] | None:
+    usable = [c for c in candidates if _sippy_entry_usable(c)]
+    if not usable:
+        return None
+
+    def score(c: dict[str, Any]) -> tuple:
+        return (
+            int(c.get("current_runs") or 0) + int(c.get("previous_runs") or 0),
+            _release_tuple(str(c.get("release") or "")),
+            float(c.get("current_average_duration_minutes") or 0),
+        )
+
+    return max(usable, key=score)
+
+
 def match_sippy_entry(job: dict[str, Any], index: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
+    """Match a configured job to Sippy runtime stats.
+
+    Prefer the same OCP version when it has usable history. If that version has
+    no Sippy runs (common for older releases like 4.12), reuse the same job
+    brief/name from another OCP version that does have data.
+    """
     by_name: dict[str, dict[str, Any]] = index.get("by_name") or {}
     by_brief: dict[str, list[dict[str, Any]]] = index.get("by_brief") or {}
     by_release_brief: dict[tuple[str, str], dict[str, Any]] = index.get("by_release_brief") or {}
 
     prow = job.get("prow_job_name")
-    if prow and prow in by_name:
-        return by_name[prow], "sippy-name"
-
     release = job.get("ocp_version") or ""
     brief = job.get("as") or ""
-    if release and brief and (release, brief) in by_release_brief:
-        return by_release_brief[(release, brief)], "sippy-brief-release"
+
+    if prow and _sippy_entry_usable(by_name.get(prow)):
+        return by_name[prow], "sippy-name"
+
+    if release and brief:
+        same_release = by_release_brief.get((release, brief))
+        if _sippy_entry_usable(same_release):
+            return same_release, "sippy-brief-release"
 
     if brief and brief in by_brief:
         candidates = by_brief[brief]
-        # Prefer same OCP version, else newest-looking release string, else most runs.
         same = [c for c in candidates if c.get("release") == release]
-        pool = same or candidates
+        best_same = _best_sippy_entry(same)
+        if best_same is not None:
+            return best_same, "sippy-brief-release"
+        best_other = _best_sippy_entry(candidates)
+        if best_other is not None:
+            return best_other, "sippy-brief"
 
-        def score(c: dict[str, Any]) -> tuple:
-            return (int(c.get("current_runs") or 0), float(c.get("current_average_duration_minutes") or 0))
-
-        return max(pool, key=score), "sippy-brief"
-
-    if prow:
+    if prow or brief:
         # Suffix fallback across indexed names (upgrade variants, etc.).
         suffix = f"-{brief}" if brief else None
-        best = None
-        best_score = (-1, -1.0)
+        pool: list[dict[str, Any]] = []
         for name, entry in by_name.items():
             if name == prow or (suffix and name.endswith(suffix)):
-                sc = (
-                    int(entry.get("current_runs") or 0),
-                    float(entry.get("current_average_duration_minutes") or 0),
-                )
-                if sc > best_score:
-                    best = entry
-                    best_score = sc
+                pool.append(entry)
+        best = _best_sippy_entry(pool)
         if best is not None:
-            return best, "sippy-suffix"
+            how = "sippy-name" if best.get("name") == prow else "sippy-suffix"
+            return best, how
 
     return None, ""
+
+
+def sippy_jobs_ui_url(release: str, job_name: str) -> str:
+    """Sippy UI filtered to a single job (the one that has history)."""
+    filt = json.dumps(
+        {
+            "items": [
+                {
+                    "columnField": "name",
+                    "operatorValue": "equals",
+                    "value": job_name,
+                }
+            ]
+        },
+        separators=(",", ":"),
+    )
+    return (
+        f"{SIPPY_JOB_URL}?"
+        + urllib.parse.urlencode({"release": release, "filter": filt})
+    )
 
 
 def workflow_median_hours(jobs: list[dict[str, Any]]) -> dict[str, float]:
@@ -745,9 +795,18 @@ def enrich_job_durations(
                 hours = min(hours, timeout_h)
             apply_lease_hold_hours(job, hours, lease_buffer_minutes)
             job["duration_source"] = how
+            matched_name = entry.get("name") or ""
+            matched_release = entry.get("release") or ""
+            borrowed = bool(
+                matched_release
+                and job.get("ocp_version")
+                and matched_release != job.get("ocp_version")
+            )
             job["sippy"] = {
-                "name": entry.get("name"),
-                "release": entry.get("release"),
+                "name": matched_name,
+                "release": matched_release,
+                "borrowed": borrowed,
+                "job_ocp_version": job.get("ocp_version"),
                 "current_avg_min": entry.get("current_average_duration_minutes"),
                 "previous_avg_min": entry.get("previous_average_duration_minutes"),
                 "current_runs": entry.get("current_runs"),
@@ -755,6 +814,10 @@ def enrich_job_durations(
                 "pass_pct": entry.get("current_pass_percentage"),
                 "planning_min": int(round(minutes)),
                 "basis": "full-prowjob-wall-clock",
+                "url": sippy_jobs_ui_url(matched_release, matched_name)
+                if matched_release and matched_name
+                else "",
+                "prow_history_name": matched_name or job.get("prow_job_name"),
             }
             meta["matched"] += 1
         else:
@@ -1533,9 +1596,11 @@ table.jobs tbody tr:hover, table.wf tbody tr:hover {{ background: rgba(15, 98, 2
   padding: 0.12rem 0.4rem; border-radius: 6px; margin-left: 0.25rem;
   border: 1px solid var(--border); color: var(--muted); vertical-align: middle;
 }}
-.pill.sippy {{ color: var(--ok-text); border-color: #246b45; background: rgba(36, 161, 72, 0.12); }}
-.pill.workflow {{ color: var(--warn-text); border-color: #7a6520; background: rgba(241, 194, 27, 0.10); }}
-.pill.default {{ color: var(--muted); background: rgba(143, 160, 184, 0.08); }}
+.pill.sippy {{ color: var(--ok-text); border-color: #246b45; background: rgba(36, 161, 72, 0.12); cursor: help; }}
+.pill.workflow {{ color: var(--warn-text); border-color: #7a6520; background: rgba(241, 194, 27, 0.10); cursor: help; }}
+.pill.default {{ color: var(--muted); background: rgba(143, 160, 184, 0.08); cursor: help; }}
+.links a {{ color: var(--accent); text-decoration: none; }}
+.links a:hover {{ text-decoration: underline; }}
 .help-list {{
   margin: 0; padding-left: 1.15rem; color: var(--text-secondary); font-size: 0.92rem;
 }}
@@ -1725,7 +1790,12 @@ table.jobs tbody tr:hover, table.wf tbody tr:hover {{ background: rgba(15, 98, 2
           <code>total leases − leases in use</code>.</li>
       <li>Duration source is Sippy full ProwJob average minutes (not test-only), biased toward the
           longer recent window when failures shorten the average, plus a small lease buffer; then
-          workflow median; then the configured default.</li>
+          workflow median; then the configured default. Green <strong>sippy</strong> /
+          amber <strong>workflow</strong> badges next to lease hold are labels (not links).</li>
+      <li>When an OCP version has no Sippy history for a job, lease hold is taken from the
+          <strong>same job on another OCP version</strong> that does have data. Links →
+          <code>sippy</code> / <code>prow</code> open that version’s history (older releases
+          like 4.12 often have none of their own).</li>
       <li><code>low-frequency</code> jobs (day-of-month / @yearly) are listed but excluded from the weekly heatmap.</li>
       <li>This is a configured-schedule planning model, not live Boskos occupancy.</li>
       <li>Dashboard refreshes daily at 08:00 IST from <code>openshift/release</code> (+ Sippy durations).</li>
@@ -1785,11 +1855,44 @@ function formatSlot(day, hour) {{
   return `${{DATA.day_names[dow]}} ${{String(hh).padStart(2,'0')}}:${{String(mm).padStart(2,'0')}} IST`;
 }}
 
-function durationPill(source) {{
+function durationPill(j) {{
+  const source = j.duration_source || '';
   if (!source) return '';
-  if (source.startsWith('sippy')) return '<span class="pill sippy">sippy</span>';
-  if (source === 'workflow-median') return '<span class="pill workflow">workflow</span>';
-  return '<span class="pill default">default</span>';
+  const sippy = j.sippy || {{}};
+  if (source.startsWith('sippy')) {{
+    const from = sippy.borrowed && sippy.release
+      ? `Duration from same job on OCP ${{sippy.release}} (this version has no Sippy history)`
+      : 'Duration from Sippy full ProwJob average (label only — use Links → sippy/prow for history)';
+    const label = sippy.borrowed && sippy.release ? `sippy·${{sippy.release}}` : 'sippy';
+    return `<span class="pill sippy" title="${{from}}">${{label}}</span>`;
+  }}
+  if (source === 'workflow-median') {{
+    return '<span class="pill workflow" title="No Sippy history for this job on any indexed OCP version; using workflow median">workflow</span>';
+  }}
+  return '<span class="pill default" title="No Sippy/workflow sample; using configured default">default</span>';
+}}
+
+function jobHistoryLinks(j) {{
+  const sippy = j.sippy || {{}};
+  const historyName = sippy.prow_history_name || sippy.name || j.prow_job_name || '';
+  const sippyUrl = sippy.url || '';
+  const parts = [];
+  if (sippyUrl) {{
+    const tip = sippy.borrowed
+      ? `Sippy history for same job on OCP ${{sippy.release}} (this OCP version has no runs)`
+      : 'Sippy job history';
+    parts.push(`<a href="${{sippyUrl}}" target="_blank" rel="noopener" title="${{tip}}">sippy</a>`);
+  }}
+  if (historyName) {{
+    const tip = sippy.borrowed
+      ? `Prow job history for same job on OCP ${{sippy.release}}`
+      : 'Prow job history';
+    parts.push(`<a href="${{PROW_HISTORY_BASE}}/${{historyName}}" target="_blank" rel="noopener" title="${{tip}}">prow</a>`);
+  }}
+  if (j.source_file) {{
+    parts.push(`<a href="${{RELEASE_BLOB_BASE}}/${{j.source_file}}" target="_blank" rel="noopener" title="openshift/release config">config</a>`);
+  }}
+  return parts.join(' · ');
 }}
 
 function renderTabs() {{
@@ -1861,7 +1964,7 @@ function showCell(p, d, h) {{
   el.style.display = 'block';
   el.innerHTML = `<h3>${{formatSlot(DATA.day_names[d], h)}} — ${{inUse}} lease(s) in use · ${{available}} available (capacity ${{p.capacity}})</h3>` +
     (jobs.length ? `<ul>${{jobs.map(j =>
-      `<li><code>${{j.as}}</code> · OCP ${{j.ocp_version}} · starts ${{j.start}} UTC · lease hold ${{j.duration_hours}}h${{j.observed_duration_hours != null && j.observed_duration_hours !== j.duration_hours ? ` (observed ${{j.observed_duration_hours}}h)` : ''}} ${{durationPill(j.duration_source)}} · <span class="mono">${{j.workflow || ''}}</span></li>`
+      `<li><code>${{j.as}}</code> · OCP ${{j.ocp_version}} · starts ${{j.start}} UTC · lease hold ${{j.duration_hours}}h${{j.observed_duration_hours != null && j.observed_duration_hours !== j.duration_hours ? ` (observed ${{j.observed_duration_hours}}h)` : ''}} ${{durationPill(j)}} · <span class="mono">${{j.workflow || ''}}</span></li>`
     ).join('')}}</ul>` : '<p style="color:var(--muted)">No overlapping weekly/daily jobs — all leases available this hour.</p>');
 }}
 
@@ -1932,14 +2035,13 @@ function renderJobs(p) {{
     return hay.includes(q);
   }});
   document.getElementById('jobs-body').innerHTML = rows.map(j => {{
-    const href = j.source_file ? (RELEASE_BLOB_BASE + '/' + j.source_file) : '#';
-    const prow = j.prow_job_name ? `<a href="${{PROW_HISTORY_BASE}}/${{j.prow_job_name}}" target="_blank" rel="noopener">prow</a>` : '';
-    const src = j.source_file ? `<a href="${{href}}" target="_blank" rel="noopener">config</a>` : '';
-    const links = [prow, src].filter(Boolean).join(' · ');
     const hold = j.duration_hours != null ? `${{j.duration_hours}}h` : '—';
     const observed = (j.observed_duration_hours != null && j.observed_duration_hours !== j.duration_hours)
       ? ` <span style="color:var(--muted)">(obs ${{j.observed_duration_hours}}h)</span>` : '';
     const english = j.cron_english || (j.interval ? ('Every ' + j.interval) : '');
+    const holdTitle = (j.sippy && j.sippy.borrowed)
+      ? `Full job wall-clock from same job on OCP ${{j.sippy.release}} (this version has no Sippy history), plus lease buffer`
+      : 'Full job wall-clock (pre→test→post) plus lease buffer';
     return `
     <tr>
       <td><code>${{j.as}}</code></td>
@@ -1947,9 +2049,9 @@ function renderJobs(p) {{
       <td class="mono">${{j.cron || j.interval || ''}}</td>
       <td class="cron-english">${{english}}</td>
       <td>${{j.schedule_class}}</td>
-      <td title="Full job wall-clock (pre→test→post) plus lease buffer">${{hold}}${{observed}} ${{durationPill(j.duration_source)}}</td>
+      <td title="${{holdTitle}}">${{hold}}${{observed}} ${{durationPill(j)}}</td>
       <td class="mono">${{j.workflow || ''}}</td>
-      <td style="font-size:.75rem;white-space:nowrap">${{links}}</td>
+      <td class="links" style="font-size:.75rem;white-space:nowrap">${{jobHistoryLinks(j)}}</td>
     </tr>`;
   }}).join('') || '<tr><td colspan="8" style="color:var(--muted)">No jobs match filters.</td></tr>';
 }}
