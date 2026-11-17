@@ -2,7 +2,7 @@ name: Update IBM Z lease dashboard
 
 on:
   schedule:
-    # 08:00 India Standard Time (UTC+05:30) == 02:30 UTC
+    # Every morning 08:00 India Standard Time (UTC+05:30) == 02:30 UTC
     - cron: "30 2 * * *"
   workflow_dispatch:
 
@@ -56,6 +56,9 @@ jobs:
 
       - name: Generate dashboard
         run: |
+          # Fresh parse of openshift/release periodics + Sippy full-job durations.
+          # New jobs, removed jobs, cron edits, lease-capacity changes, and
+          # duration shifts are all derived automatically — no hardcoded lists.
           python3 scripts/generate_report.py \
             --release-repo .openshift-release \
             --out-dir docs \
@@ -63,7 +66,7 @@ jobs:
             --duration-hours 5 \
             --lease-buffer-minutes 15
 
-      - name: Detect schedule changes
+      - name: Detect schedule / duration changes
         id: diff
         run: |
           set -euo pipefail
@@ -71,35 +74,45 @@ jobs:
           OLD="${{ steps.prev.outputs.value }}"
           echo "new=$NEW" >> "$GITHUB_OUTPUT"
           if [ "$NEW" = "$OLD" ] && [ -n "$OLD" ]; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "No job/cron/lease-capacity changes detected."
+            echo "schedule_changed=false" >> "$GITHUB_OUTPUT"
+            echo "Fingerprint unchanged (no job/cron/lease/duration-model delta)."
           else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "Schedule fingerprint changed (or first run)."
+            echo "schedule_changed=true" >> "$GITHUB_OUTPUT"
+            echo "Fingerprint changed (jobs, crons, leases, and/or durations)."
             echo "old=${OLD:-<none>}"
             echo "new=$NEW"
           fi
 
       - name: Commit and push updated dashboard
-        if: steps.diff.outputs.changed == 'true'
+        id: publish
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add docs/index.html docs/jobs.csv docs/summary.json docs/schedule.fingerprint
+
           if git diff --cached --quiet; then
-            echo "No file content changes to commit."
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            echo "Generated output identical to HEAD — nothing to publish."
             exit 0
           fi
+
           SHORT="${RELEASE_SHA:0:12}"
+          KIND="daily refresh"
+          if [ "${{ steps.diff.outputs.schedule_changed }}" = "true" ]; then
+            KIND="schedule/duration update"
+          fi
+
           git commit -m "$(cat <<EOF
           chore: refresh IBM Z lease dashboard from openshift/release@${SHORT}
 
-          Auto-update at 08:00 IST when jobs, crons, lease capacity, or Sippy durations change.
+          Automatic morning publish (${KIND}).
+          Covers new/removed jobs, cron changes, Boskos capacity, and Sippy durations.
           Fingerprint: ${{ steps.diff.outputs.new }}
           EOF
           )"
           git push
+          echo "published=true" >> "$GITHUB_OUTPUT"
 
       - name: Write job summary
         run: |
@@ -108,7 +121,10 @@ jobs:
             echo ""
             echo "- openshift/release: \`${RELEASE_SHA:0:12}\`"
             echo "- fingerprint: \`${{ steps.diff.outputs.new }}\`"
-            echo "- changed: \`${{ steps.diff.outputs.changed }}\`"
-            echo "- duration model: Sippy averages + workflow/default fallback"
+            echo "- schedule/duration changed: \`${{ steps.diff.outputs.schedule_changed }}\`"
+            echo "- published: \`${{ steps.publish.outputs.published }}\`"
+            echo "- duration model: Sippy full-job wall-clock + workflow/default fallback"
             echo "- pages: https://ibm-adarsh.github.io/ibmz-lease-capacity/"
+            echo ""
+            echo "This workflow runs daily at **08:00 IST** with no manual steps."
           } >> "$GITHUB_STEP_SUMMARY"
