@@ -1407,38 +1407,38 @@ def render_html(
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>IBM Z lease schedule capacity</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230f62fe'/%3E%3Ctext x='32' y='42' text-anchor='middle' font-family='Arial,sans-serif' font-size='26' font-weight='700' fill='white'%3EZ%3C/text%3E%3C/svg%3E"/>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230f62fe'/%3E%3Crect x='12' y='38' width='8' height='14' rx='2' fill='%23ffffff' opacity='0.55'/%3E%3Crect x='24' y='28' width='8' height='24' rx='2' fill='%23ffffff' opacity='0.75'/%3E%3Crect x='36' y='18' width='8' height='34' rx='2' fill='%23ffffff'/%3E%3Cpath d='M46 14h6l-8 12h7l-12 18h-6l8-12h-7z' fill='%239ef0f0'/%3E%3C/svg%3E"/>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <style>
 :root {{
-  --bg: #0b1220;
-  --bg-elevated: #101a2b;
-  --panel: #152238;
-  --panel-2: #1a2a42;
-  --border: #2a3b55;
-  --border-strong: #3d5475;
-  --text: #eef3fa;
-  --text-secondary: #c2cede;
-  --muted: #8fa0b8;
+  --bg: #f4f7fb;
+  --bg-elevated: #ffffff;
+  --panel: #ffffff;
+  --border: #d5deea;
+  --border-strong: #b7c4d6;
+  --text: #121619;
+  --text-secondary: #343a3f;
+  --muted: #697077;
   --accent: #0f62fe;
-  --accent-soft: rgba(15, 98, 254, 0.16);
-  --accent-text: #78a9ff;
-  --ok: #24a148;
-  --ok-bg: #0d2f1c;
-  --ok-text: #6fcf97;
-  --warn: #f1c21b;
-  --warn-bg: #3a2f0a;
-  --warn-text: #f5d76e;
-  --bad: #fa4d56;
-  --bad-bg: #3a1216;
-  --bad-text: #ffb3b8;
-  --idle-bg: #0e1624;
-  --idle-text: #6b7c94;
-  --radius: 12px;
-  --radius-sm: 8px;
-  --shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+  --accent-soft: rgba(15, 98, 254, 0.08);
+  --accent-text: #0043ce;
+  --ok: #198038;
+  --ok-bg: #defbe6;
+  --ok-text: #0e6027;
+  --warn: #b28600;
+  --warn-bg: #fcf4d6;
+  --warn-text: #684e00;
+  --bad: #da1e28;
+  --bad-bg: #fff1f1;
+  --bad-text: #a2191f;
+  --idle-bg: #e8edf4;
+  --idle-text: #697077;
+  --teal: #007d79;
+  --radius: 14px;
+  --radius-sm: 10px;
+  --shadow: 0 8px 24px rgba(18, 22, 25, 0.06);
   --font: "IBM Plex Sans", "Segoe UI", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
 }}
@@ -1448,8 +1448,7 @@ body {{
   margin: 0;
   font-family: var(--font);
   background:
-    radial-gradient(1200px 500px at 10% -10%, rgba(15, 98, 254, 0.18), transparent 55%),
-    radial-gradient(900px 420px at 90% 0%, rgba(8, 163, 184, 0.10), transparent 50%),
+    linear-gradient(180deg, #eef3fb 0%, var(--bg) 220px),
     var(--bg);
   color: var(--text);
   line-height: 1.5;
@@ -1458,13 +1457,18 @@ body {{
 }}
 a {{ color: var(--accent-text); text-decoration: none; }}
 a:hover {{ text-decoration: underline; }}
-code, .mono {{ font-family: var(--mono); font-size: 0.92em; }}
+code, .mono {{
+  font-family: var(--mono); font-size: 0.92em;
+  background: #eef2f8; color: #002d9c;
+  padding: 0.08rem 0.28rem; border-radius: 4px;
+}}
 header.hero {{
-  padding: 1.9rem clamp(1.1rem, 2.5vw, 2.25rem) 1.5rem;
+  padding: 1.85rem clamp(1.1rem, 2.5vw, 2.25rem) 1.45rem;
   border-bottom: 1px solid var(--border);
   background:
-    radial-gradient(700px 220px at 12% 0%, rgba(15, 98, 254, 0.22), transparent 60%),
-    linear-gradient(180deg, rgba(18, 30, 50, 0.96), rgba(11, 18, 32, 0.72));
+    radial-gradient(680px 240px at 8% 0%, rgba(15, 98, 254, 0.12), transparent 62%),
+    radial-gradient(520px 200px at 92% 10%, rgba(0, 125, 121, 0.08), transparent 55%),
+    #ffffff;
 }}
 .hero-inner {{ max-width: min(100%, 1760px); margin: 0 auto; }}
 .hero-top {{
@@ -1476,29 +1480,30 @@ header.hero {{
 }}
 .brand-mark {{
   flex: 0 0 auto;
-  width: 3rem; height: 3rem;
-  border-radius: 0.85rem;
-  background: linear-gradient(145deg, #0f62fe, #08a3b8);
+  width: 3.15rem; height: 3.15rem;
+  border-radius: 0.9rem;
+  background: linear-gradient(145deg, #0f62fe 0%, #0043ce 55%, #007d79 120%);
   display: grid; place-items: center;
-  box-shadow: 0 10px 24px rgba(15, 98, 254, 0.32);
+  box-shadow: 0 10px 22px rgba(15, 98, 254, 0.22);
 }}
-.brand-mark svg {{ width: 1.65rem; height: 1.65rem; display: block; }}
+.brand-mark svg {{ width: 1.85rem; height: 1.85rem; display: block; }}
 .brand-text {{ min-width: 0; }}
 .eyebrow {{
   display: inline-block;
   margin: 0 0 0.3rem;
   color: var(--accent-text);
   font-size: 0.7rem;
-  font-weight: 600;
+  font-weight: 650;
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }}
 header.hero h1 {{
   margin: 0;
-  font-size: clamp(1.7rem, 2.8vw, 2.35rem);
+  font-size: clamp(1.75rem, 2.8vw, 2.4rem);
   font-weight: 700;
   letter-spacing: -0.03em;
   line-height: 1.1;
+  color: #121619;
 }}
 .lede {{
   margin: 0.85rem 0 0;
@@ -1516,19 +1521,20 @@ header.hero h1 {{
 }}
 .meta-chip {{
   display: inline-flex; align-items: center; gap: 0.35rem;
-  padding: 0.35rem 0.65rem;
+  padding: 0.38rem 0.7rem;
   border-radius: 999px;
-  border: 1px solid rgba(61, 84, 117, 0.7);
-  background: rgba(16, 26, 43, 0.72);
+  border: 1px solid var(--border);
+  background: #f2f6fc;
   color: var(--muted);
   font-size: 0.78rem;
   line-height: 1.2;
 }}
 .meta-chip strong {{ color: var(--text-secondary); font-weight: 600; }}
 .meta-chip a {{ color: var(--accent-text); }}
+.meta-chip code {{ background: transparent; padding: 0; color: var(--accent-text); }}
 .toggle {{
   display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
-  overflow: hidden; background: var(--bg-elevated);
+  overflow: hidden; background: #fff;
 }}
 .toggle button {{
   background: transparent; color: var(--muted); border: 0; padding: 0.48rem 0.9rem;
@@ -1554,13 +1560,14 @@ main {{ padding: 1.25rem clamp(1rem, 2vw, 1.75rem) 3.5rem; max-width: min(100%, 
   text-align: left;
   flex: 1 1 200px;
   min-width: 0;
-  transition: border-color .15s ease, background .15s ease, transform .15s ease;
+  box-shadow: var(--shadow);
+  transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
 }}
 .tab:hover {{ border-color: var(--border-strong); transform: translateY(-1px); }}
 .tab.active {{
   border-color: var(--accent);
-  background: linear-gradient(180deg, rgba(15, 98, 254, 0.22), rgba(21, 34, 56, 0.95));
-  box-shadow: inset 0 0 0 1px rgba(15, 98, 254, 0.35);
+  background: linear-gradient(180deg, #edf3ff, #ffffff);
+  box-shadow: 0 0 0 1px rgba(15, 98, 254, 0.25), var(--shadow);
 }}
 .tab .tab-name {{
   display: block;
@@ -1568,6 +1575,9 @@ main {{ padding: 1.25rem clamp(1rem, 2vw, 1.75rem) 3.5rem; max-width: min(100%, 
   font-size: 0.78rem;
   font-weight: 500;
   letter-spacing: -0.01em;
+  color: #002d9c;
+  background: transparent;
+  padding: 0;
 }}
 .tab .count {{
   display: block;
@@ -1578,7 +1588,7 @@ main {{ padding: 1.25rem clamp(1rem, 2vw, 1.75rem) 3.5rem; max-width: min(100%, 
   font-weight: 500;
 }}
 .panel {{
-  background: linear-gradient(180deg, rgba(26, 42, 66, 0.92), rgba(21, 34, 56, 0.96));
+  background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 1.15rem 1.2rem 1.25rem;
@@ -1593,6 +1603,7 @@ main {{ padding: 1.25rem clamp(1rem, 2vw, 1.75rem) 3.5rem; max-width: min(100%, 
   font-weight: 650;
   letter-spacing: -0.015em;
   line-height: 1.25;
+  color: #121619;
 }}
 .panel-lead {{
   margin: 0.45rem 0 0;
@@ -1607,6 +1618,8 @@ main {{ padding: 1.25rem clamp(1rem, 2vw, 1.75rem) 3.5rem; max-width: min(100%, 
   font-size: 1rem;
   font-weight: 500;
   color: var(--accent-text);
+  background: transparent;
+  padding: 0;
 }}
 .meta {{
   display: grid;
@@ -1620,7 +1633,7 @@ main {{ padding: 1.25rem clamp(1rem, 2vw, 1.75rem) 3.5rem; max-width: min(100%, 
   .meta {{ grid-template-columns: 1fr; }}
 }}
 .metric {{
-  background: var(--bg-elevated);
+  background: #f7f9fc;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 1rem 1.05rem;
@@ -1643,6 +1656,7 @@ main {{ padding: 1.25rem clamp(1rem, 2vw, 1.75rem) 3.5rem; max-width: min(100%, 
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.1;
+  color: #121619;
 }}
 .metric .hint {{
   margin-top: 0.4rem;
@@ -1653,7 +1667,7 @@ main {{ padding: 1.25rem clamp(1rem, 2vw, 1.75rem) 3.5rem; max-width: min(100%, 
 .lease-names {{
   margin: 1rem 0 0;
   padding: 0.9rem 1rem;
-  background: rgba(11, 18, 32, 0.55);
+  background: #f7f9fc;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--muted);
@@ -1675,14 +1689,15 @@ main {{ padding: 1.25rem clamp(1rem, 2vw, 1.75rem) 3.5rem; max-width: min(100%, 
   letter-spacing: 0.01em;
 }}
 .callout {{
-  border-left: 3px solid #08a3b8;
+  border-left: 3px solid var(--teal);
+  background: linear-gradient(90deg, rgba(0, 125, 121, 0.06), #ffffff 35%);
 }}
 .callout .panel-lead {{ color: var(--text-secondary); }}
 .heatmap-wrap {{
   overflow-x: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--bg-elevated);
+  background: #f7f9fc;
   width: 100%;
 }}
 table.heatmap {{
@@ -1713,12 +1728,13 @@ table.heatmap td {{
   cursor: pointer; font-family: var(--mono); font-weight: 600;
   height: clamp(2.6rem, 4.2vw, 3.35rem);
   transition: transform .12s ease, outline-color .12s ease;
+  border: 1px solid transparent;
 }}
 table.heatmap td:hover {{ transform: scale(1.04); outline: 1px solid var(--border-strong); z-index: 1; }}
-table.heatmap td.idle {{ background: var(--idle-bg); color: var(--idle-text); }}
-table.heatmap td.ok {{ background: var(--ok-bg); color: var(--ok-text); }}
-table.heatmap td.warn {{ background: var(--warn-bg); color: var(--warn-text); }}
-table.heatmap td.bad {{ background: var(--bad-bg); color: var(--bad-text); }}
+table.heatmap td.idle {{ background: var(--idle-bg); color: var(--idle-text); border-color: #d3dae6; }}
+table.heatmap td.ok {{ background: var(--ok-bg); color: var(--ok-text); border-color: #a7f0c0; }}
+table.heatmap td.warn {{ background: var(--warn-bg); color: var(--warn-text); border-color: #f1d67a; }}
+table.heatmap td.bad {{ background: var(--bad-bg); color: var(--bad-text); border-color: #ffd7d9; }}
 .legend {{
   display: flex; gap: 1rem; flex-wrap: wrap;
   color: var(--muted); font-size: 0.8rem; margin: 0.85rem 0 0;
@@ -1738,7 +1754,7 @@ table.heatmap td.bad {{ background: var(--bad-bg); color: var(--bad-text); }}
   .cols {{ grid-template-columns: 1fr; }}
 }}
 .slot-block {{
-  background: linear-gradient(180deg, rgba(26, 42, 66, 0.95), rgba(21, 34, 56, 0.98));
+  background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   border-left: 4px solid var(--accent);
@@ -1748,13 +1764,13 @@ table.heatmap td.bad {{ background: var(--bad-bg); color: var(--bad-text); }}
   min-height: 0;
   overflow: hidden;
 }}
-.slot-block.free {{ border-left-color: #24a148; }}
-.slot-block.hours {{ border-left-color: #08a3b8; }}
+.slot-block.free {{ border-left-color: var(--ok); }}
+.slot-block.hours {{ border-left-color: var(--teal); }}
 .slot-block.busy {{ border-left-color: #f1c21b; }}
 .slot-block-head {{
   padding: 0.95rem 1rem 0.75rem;
   border-bottom: 1px solid var(--border);
-  background: rgba(11, 18, 32, 0.35);
+  background: #f7f9fc;
 }}
 .slot-block-head .eyebrow {{ margin-bottom: 0.3rem; }}
 .slot-block-head h2 {{
@@ -1779,7 +1795,7 @@ table.heatmap td.bad {{ background: var(--bad-bg); color: var(--bad-text); }}
   position: absolute;
   left: 0; right: 0; bottom: 0;
   height: 2.4rem;
-  background: linear-gradient(180deg, transparent, rgba(11, 18, 32, 0.92));
+  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.95));
   opacity: 0.95;
 }}
 .slot-scroll.is-bottom::after {{ opacity: 0; }}
@@ -1800,7 +1816,7 @@ ul.slots::-webkit-scrollbar-thumb {{
 }}
 ul.slots li {{
   padding: 0.65rem 0.35rem;
-  border-bottom: 1px solid rgba(42, 59, 85, 0.9);
+  border-bottom: 1px solid #e6ebf2;
   font-size: 0.88rem;
   display: flex; justify-content: space-between; gap: 0.65rem; align-items: baseline;
 }}
@@ -1815,6 +1831,7 @@ ul.slots li:last-child {{ border-bottom: 0; }}
   display: flex;
   align-items: center;
   gap: 0.4rem;
+  background: #fafbfd;
 }}
 .slot-foot .chev {{
   display: inline-block;
@@ -1826,35 +1843,35 @@ ul.slots li:last-child {{ border-bottom: 0; }}
 }}
 .badge {{
   font-size: 0.72rem; font-weight: 560; padding: 0.18rem 0.45rem;
-  border-radius: 6px; background: var(--bg-elevated);
+  border-radius: 6px; background: #eef3fb;
   border: 1px solid var(--border); color: var(--text-secondary); white-space: nowrap;
 }}
 .filters {{ display: flex; flex-wrap: wrap; gap: 0.55rem; margin-bottom: 0.85rem; }}
 .filters input, .filters select {{
-  background: var(--bg-elevated); color: var(--text); border: 1px solid var(--border);
+  background: #ffffff; color: var(--text); border: 1px solid var(--border);
   border-radius: var(--radius-sm); padding: 0.5rem 0.65rem; font: 500 0.86rem/1.2 var(--font);
 }}
 .filters input:focus, .filters select:focus {{
-  outline: 2px solid rgba(15, 98, 254, 0.45); outline-offset: 1px;
+  outline: 2px solid rgba(15, 98, 254, 0.35); outline-offset: 1px;
 }}
 table.jobs, table.wf {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; }}
 table.jobs th, table.jobs td, table.wf th, table.wf td {{
-  border-bottom: 1px solid rgba(42, 59, 85, 0.9);
+  border-bottom: 1px solid #e6ebf2;
   padding: 0.55rem 0.5rem; text-align: left; vertical-align: top;
 }}
 table.jobs th, table.wf th {{
   color: var(--muted); font-weight: 650; font-size: 0.72rem;
   text-transform: uppercase; letter-spacing: 0.05em;
-  position: sticky; top: 0; background: #172640; z-index: 1;
+  position: sticky; top: 0; background: #eef3fb; z-index: 1;
 }}
-table.jobs tbody tr:hover, table.wf tbody tr:hover {{ background: rgba(15, 98, 254, 0.06); }}
+table.jobs tbody tr:hover, table.wf tbody tr:hover {{ background: var(--accent-soft); }}
 .jobs-wrap {{
   max-height: 480px; overflow: auto;
   border: 1px solid var(--border); border-radius: var(--radius-sm);
-  background: rgba(11, 18, 32, 0.35);
+  background: #ffffff;
 }}
 #cell-detail {{
-  margin-top: 0.9rem; padding: 0.95rem 1rem; background: var(--bg-elevated);
+  margin-top: 0.9rem; padding: 0.95rem 1rem; background: #f7f9fc;
   border: 1px solid var(--border); border-radius: var(--radius-sm);
   font-size: 0.88rem; display: none;
 }}
@@ -1865,10 +1882,10 @@ table.jobs tbody tr:hover, table.wf tbody tr:hover {{ background: rgba(15, 98, 2
   padding: 0.12rem 0.4rem; border-radius: 6px; margin-left: 0.25rem;
   border: 1px solid var(--border); color: var(--muted); vertical-align: middle;
 }}
-.pill.sippy {{ color: var(--ok-text); border-color: #246b45; background: rgba(36, 161, 72, 0.12); cursor: help; }}
-.pill.workflow {{ color: var(--warn-text); border-color: #7a6520; background: rgba(241, 194, 27, 0.10); cursor: help; }}
-.pill.default {{ color: var(--muted); background: rgba(143, 160, 184, 0.08); cursor: help; }}
-.links a {{ color: var(--accent); text-decoration: none; }}
+.pill.sippy {{ color: var(--ok-text); border-color: #a7f0c0; background: var(--ok-bg); cursor: help; }}
+.pill.workflow {{ color: var(--warn-text); border-color: #f1d67a; background: var(--warn-bg); cursor: help; }}
+.pill.default {{ color: var(--muted); background: #eef2f8; cursor: help; }}
+.links a {{ color: var(--accent-text); text-decoration: none; }}
 .links a:hover {{ text-decoration: underline; }}
 .guide-grid {{
   display: grid;
@@ -1881,9 +1898,10 @@ table.jobs tbody tr:hover, table.wf tbody tr:hover {{ background: rgba(15, 98, 2
 .guide-card {{
   margin: 0;
   padding: 0.9rem 1rem;
-  background: rgba(11, 18, 32, 0.45);
+  background: #f7f9fc;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+  border-top: 3px solid #a6c8ff;
 }}
 .guide-card h3 {{
   margin: 0 0 0.35rem;
@@ -1917,9 +1935,11 @@ table.jobs tbody tr:hover, table.wf tbody tr:hover {{ background: rgba(15, 98, 2
     <div class="hero-top">
       <div class="brand-row">
         <div class="brand-mark" aria-hidden="true">
-          <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M6 8h20v3.2H6V8zm0 6.4h20V18H6v-3.6zm0 6.4h20V24H6v-3.2z" fill="#fff"/>
-            <circle cx="24.2" cy="9.6" r="2.2" fill="#9ef0f0"/>
+          <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <rect x="5" y="20" width="5" height="8" rx="1.2" fill="#fff" opacity="0.55"/>
+            <rect x="12" y="14" width="5" height="14" rx="1.2" fill="#fff" opacity="0.78"/>
+            <rect x="19" y="8" width="5" height="20" rx="1.2" fill="#fff"/>
+            <path d="M24.2 6.2h3.2L23.2 12h3.4L20.4 22h-3.1l4.1-6.2h-3.3z" fill="#9ef0f0"/>
           </svg>
         </div>
         <div class="brand-text">
