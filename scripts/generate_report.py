@@ -107,6 +107,15 @@ def parse_args() -> argparse.Namespace:
         help="Maximum modeled duration (hours) clamp (default: 12)",
     )
     parser.add_argument(
+        "--lease-buffer-minutes",
+        type=float,
+        default=15.0,
+        help=(
+            "Extra minutes added on top of observed full-job wall-clock for lease-hold "
+            "modeling (covers acquire→release lag around pre/test/post; default: 15)"
+        ),
+    )
+    parser.add_argument(
         "--profiles",
         nargs="+",
         default=list(DEFAULT_PROFILES),
@@ -457,21 +466,31 @@ def build_sippy_index(releases: list[str]) -> dict[str, Any]:
 
 
 def planning_minutes_from_sippy(entry: dict[str, Any]) -> float | None:
-    """Choose a conservative observed duration in minutes from Sippy averages."""
+    """Choose a conservative full-job wall-clock duration (minutes) from Sippy.
+
+    Sippy's average duration is the entire ProwJob (start→completion), which
+    covers lease acquire through pre → test → post cleanup — not test-only.
+    Short failed runs can pull the current window down; bias toward the longer
+    recent window so lease occupancy is not under-counted.
+    """
     cur = float(entry.get("current_average_duration_minutes") or 0)
     prev = float(entry.get("previous_average_duration_minutes") or 0)
     cur_runs = int(entry.get("current_runs") or 0)
     prev_runs = int(entry.get("previous_runs") or 0)
-    samples = []
-    if cur > 0 and cur_runs > 0:
-        samples.append(cur)
-    if prev > 0 and prev_runs > 0:
-        samples.append(prev)
-    if not samples:
+    pass_pct = entry.get("current_pass_percentage")
+    if cur <= 0 or cur_runs <= 0:
+        cur = 0.0
+    if prev <= 0 or prev_runs <= 0:
+        prev = 0.0
+    if cur <= 0 and prev <= 0:
         return None
-    # Prefer the higher of recent windows so short infra-fail averages don't
-    # under-count lease hold time for capacity planning.
-    return max(samples)
+    # When many current runs fail early, prefer the healthier previous window.
+    if cur > 0 and prev > 0 and pass_pct is not None and float(pass_pct) < 80:
+        if cur < prev * 0.85:
+            return prev
+    if cur > 0 and prev > 0:
+        return max(cur, prev)
+    return cur or prev
 
 
 def match_sippy_entry(job: dict[str, Any], index: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
@@ -530,6 +549,16 @@ def workflow_median_hours(jobs: list[dict[str, Any]]) -> dict[str, float]:
     return {wf: statistics.median(vals) for wf, vals in buckets.items() if vals}
 
 
+def apply_lease_hold_hours(job: dict[str, Any], hours: float, buffer_minutes: float) -> None:
+    """Store observed runtime and lease-hold hours (observed + release buffer)."""
+    observed = round_duration_hours(hours)
+    hold = round_duration_hours(observed + (buffer_minutes / 60.0))
+    job["observed_duration_hours"] = observed
+    job["duration_hours"] = hold  # used by concurrency model = leases unavailable
+    job["duration_minutes"] = int(round(hold * 60))
+    job["lease_buffer_minutes"] = buffer_minutes
+
+
 def enrich_job_durations(
     jobs: list[dict[str, Any]],
     *,
@@ -537,11 +566,17 @@ def enrich_job_durations(
     default_hours: float,
     min_hours: float,
     max_hours: float,
+    lease_buffer_minutes: float,
 ) -> dict[str, Any]:
-    """Attach duration_hours / duration_source / sippy fields to each job."""
+    """Attach full-job lease-hold durations (pre→test→post wall-clock) to each job."""
     meta: dict[str, Any] = {
         "enabled": fetch_sippy,
         "default_hours": default_hours,
+        "lease_buffer_minutes": lease_buffer_minutes,
+        "duration_basis": (
+            "Full ProwJob wall-clock (lease acquire through pre/test/post), "
+            "not test-phase only"
+        ),
         "fetched_releases": [],
         "errors": [],
         "matched": 0,
@@ -551,9 +586,8 @@ def enrich_job_durations(
 
     if not fetch_sippy:
         for job in jobs:
-            job["duration_hours"] = round_duration_hours(default_hours)
+            apply_lease_hold_hours(job, default_hours, lease_buffer_minutes)
             job["duration_source"] = "default"
-            job["duration_minutes"] = int(round(job["duration_hours"] * 60))
             job["sippy"] = None
         meta["default_fallback"] = len(jobs)
         return meta
@@ -567,7 +601,7 @@ def enrich_job_durations(
     meta["fetched_releases"] = index.get("fetched_releases") or []
     meta["errors"] = index.get("errors") or []
 
-    # First pass: direct Sippy matches
+    # First pass: direct Sippy matches (full ProwJob wall-clock).
     for job in jobs:
         entry, how = match_sippy_entry(job, index)
         minutes = planning_minutes_from_sippy(entry) if entry else None
@@ -577,8 +611,7 @@ def enrich_job_durations(
             timeout_h = parse_timeout_hours(job.get("timeout"))
             if timeout_h:
                 hours = min(hours, timeout_h)
-            job["duration_hours"] = round_duration_hours(hours)
-            job["duration_minutes"] = int(round(job["duration_hours"] * 60))
+            apply_lease_hold_hours(job, hours, lease_buffer_minutes)
             job["duration_source"] = how
             job["sippy"] = {
                 "name": entry.get("name"),
@@ -589,15 +622,26 @@ def enrich_job_durations(
                 "previous_runs": entry.get("previous_runs"),
                 "pass_pct": entry.get("current_pass_percentage"),
                 "planning_min": int(round(minutes)),
+                "basis": "full-prowjob-wall-clock",
             }
             meta["matched"] += 1
         else:
             job["duration_hours"] = None
+            job["observed_duration_hours"] = None
             job["duration_minutes"] = None
             job["duration_source"] = None
             job["sippy"] = None
 
-    wf_medians = workflow_median_hours(jobs)
+    # Workflow medians are computed from observed (pre-buffer) hours so the
+    # buffer is not double-applied for fallbacks.
+    buckets: dict[str, list[float]] = defaultdict(list)
+    for job in jobs:
+        source = job.get("duration_source") or ""
+        if source.startswith("sippy") and job.get("observed_duration_hours"):
+            wf = job.get("workflow") or ""
+            if wf:
+                buckets[wf].append(float(job["observed_duration_hours"]))
+    wf_medians = {wf: statistics.median(vals) for wf, vals in buckets.items() if vals}
     meta["workflow_medians_hours"] = {k: round(v, 2) for k, v in sorted(wf_medians.items())}
 
     # Raise suspiciously short Sippy averages (often early infra fails) toward
@@ -609,12 +653,11 @@ def enrich_job_durations(
         wf = job.get("workflow") or ""
         if wf not in wf_medians:
             continue
-        current = float(job.get("duration_hours") or 0)
+        current = float(job.get("observed_duration_hours") or 0)
         floor = wf_medians[wf]
         if current > 0 and current < max(1.0, floor * 0.5):
             raised = min(max(floor, min_hours), max_hours)
-            job["duration_hours"] = round_duration_hours(raised)
-            job["duration_minutes"] = int(round(job["duration_hours"] * 60))
+            apply_lease_hold_hours(job, raised, lease_buffer_minutes)
             job["duration_source"] = "sippy+workflow-floor"
 
     # Second pass: workflow / default fallbacks
@@ -624,13 +667,11 @@ def enrich_job_durations(
         wf = job.get("workflow") or ""
         if wf in wf_medians:
             hours = min(max(wf_medians[wf], min_hours), max_hours)
-            job["duration_hours"] = round_duration_hours(hours)
-            job["duration_minutes"] = int(round(job["duration_hours"] * 60))
+            apply_lease_hold_hours(job, hours, lease_buffer_minutes)
             job["duration_source"] = "workflow-median"
             meta["workflow_fallback"] += 1
         else:
-            job["duration_hours"] = round_duration_hours(default_hours)
-            job["duration_minutes"] = int(round(job["duration_hours"] * 60))
+            apply_lease_hold_hours(job, default_hours, lease_buffer_minutes)
             job["duration_source"] = "default"
             meta["default_fallback"] += 1
 
@@ -641,7 +682,12 @@ def build_concurrency(
     jobs: list[dict[str, Any]],
     default_duration_hours: float,
 ) -> tuple[list[list[int]], list[list[list[dict[str, Any]]]]]:
-    """Build 7x24 demand grid and per-cell overlapping job details."""
+    """Build 7x24 lease-occupancy grid.
+
+    Each scheduled job occupies exactly 1 lease from cron start for its modeled
+    lease-hold duration (full job wall-clock: pre → test → post + buffer).
+    Example: capacity 10 and one 3h job ⇒ that hour has demand 1 / available 9.
+    """
     week_min = 7 * 24 * 60
     demand = [[0 for _ in range(24)] for _ in range(7)]
     details: list[list[list[dict[str, Any]]]] = [[[] for _ in range(24)] for _ in range(7)]
@@ -659,6 +705,7 @@ def build_concurrency(
             "source_file": job["source_file"],
             "workflow": job.get("workflow"),
             "duration_hours": duration_hours,
+            "observed_duration_hours": job.get("observed_duration_hours"),
             "duration_source": job.get("duration_source"),
         }
         for dow, hour, minute in job.get("slots") or []:
@@ -774,7 +821,9 @@ def write_csv(
         "schedule_class",
         "timeout",
         "workflow",
+        "observed_duration_hours",
         "duration_hours",
+        "lease_buffer_minutes",
         "duration_source",
         "sippy_planning_min",
         "sippy_current_avg_min",
@@ -801,7 +850,11 @@ def write_csv(
                     "schedule_class": job.get("schedule_class", ""),
                     "timeout": job["timeout"] or "",
                     "workflow": job["workflow"] or "",
+                    "observed_duration_hours": job.get("observed_duration_hours") or "",
                     "duration_hours": job.get("duration_hours") or "",
+                    "lease_buffer_minutes": job.get("lease_buffer_minutes")
+                    if job.get("lease_buffer_minutes") is not None
+                    else "",
                     "duration_source": job.get("duration_source") or "",
                     "sippy_planning_min": sippy.get("planning_min", ""),
                     "sippy_current_avg_min": sippy.get("current_avg_min", ""),
@@ -823,6 +876,8 @@ def schedule_fingerprint(
     rows: list[str] = [
         f"duration_default={duration_meta.get('default_hours')}",
         f"sippy_enabled={bool(duration_meta.get('enabled'))}",
+        f"lease_buffer_minutes={duration_meta.get('lease_buffer_minutes')}",
+        "duration_basis=full-prowjob-wall-clock",
     ]
     for profile in sorted(lease_map):
         lt = lease_map[profile]
@@ -898,10 +953,12 @@ def render_html(
         )
 
     data_json = json.dumps(payload, separators=(",", ":")).replace("<", "\\u003c")
+    buf = duration_meta.get("lease_buffer_minutes")
+    buf_note = f" + {buf:g}m lease buffer" if buf else ""
     sippy_note = (
-        "Sippy-observed runtimes (per job, with workflow/default fallback)"
+        f"full job wall-clock pre→test→post from Sippy{buf_note}"
         if duration_meta.get("enabled")
-        else f"fixed {duration_meta.get('default_hours')}h assumption"
+        else f"fixed {duration_meta.get('default_hours')}h lease hold{buf_note}"
     )
 
     html = f"""<!DOCTYPE html>
@@ -1048,11 +1105,21 @@ a {{ color: var(--accent); }}
     <p class="lease-names" id="lease-names" style="margin-top:.75rem"></p>
   </section>
   <section class="panel">
+    <h2>Lease occupancy model</h2>
+    <p style="color:var(--muted);font-size:.9rem;margin-top:0">
+      A Boskos lease is acquired when the job <strong>starts</strong> and stays held through
+      <strong>pre → test → post</strong> (full Prow job wall-clock from Sippy, not test-phase only).
+      Example: capacity <code>10</code>, one job with a <code>3h</code> lease hold ⇒ for the next 3 hours
+      that lease is busy, so only <code>9</code> leases remain available for other jobs.
+      Heatmap cell value = <strong>leases in use</strong>; available = capacity − in use.
+    </p>
+  </section>
+  <section class="panel">
     <h2>Weekly concurrency heatmap</h2>
     <p style="color:var(--muted);font-size:.85rem;margin-top:0">
-      Each cell is concurrent jobs assumed to hold a lease during that hour (cron schedule in UTC).
-      Hold duration uses Sippy averages when available. Color vs capacity: idle / OK / near (≥80%) / overcommit.
-      Click a cell for overlapping jobs.
+      Each cell is concurrent leases in use during that UTC hour (one lease per overlapping job).
+      Hold time = full job wall-clock (pre/test/post) + lease buffer. Color vs capacity: idle / OK / near (≥80%) / overcommit.
+      Click a cell for overlapping jobs and remaining availability.
     </p>
     <div class="heatmap-wrap">
       <table class="heatmap" id="heatmap"></table>
@@ -1113,7 +1180,7 @@ a {{ color: var(--accent); }}
         <thead>
           <tr>
             <th>Job</th><th>OCP</th><th>Cron</th><th>Class</th>
-            <th>Duration</th><th>Workflow</th><th>Links</th>
+            <th>Lease hold</th><th>Workflow</th><th>Links</th>
           </tr>
         </thead>
         <tbody id="jobs-body"></tbody>
@@ -1125,8 +1192,12 @@ a {{ color: var(--accent); }}
     <ul style="color:var(--muted);font-size:.9rem;margin:0;padding-left:1.1rem">
       <li>Profile tabs show the <strong>full</strong> cluster profile name (e.g. <code>libvirt-s390x-vpn-amd64</code>).</li>
       <li>Prow cron times are UTC. Capacity comes from Boskos <code>*-quota-slice</code> name lists.</li>
-      <li>Each periodic holds <strong>1 lease</strong> for its modeled duration after each cron start.</li>
-      <li>Durations prefer Sippy <code>current/previous_average_duration_minutes</code> (conservative max), then workflow median, then the configured default.</li>
+      <li>Each periodic acquires <strong>1 lease at job start</strong> and keeps it for the full wall-clock
+          (pre → test → post) after each cron start. Remaining capacity that hour =
+          <code>total leases − leases in use</code>.</li>
+      <li>Duration source is Sippy full ProwJob average minutes (not test-only), biased toward the
+          longer recent window when failures shorten the average, plus a small lease buffer; then
+          workflow median; then the configured default.</li>
       <li><code>low-frequency</code> jobs (day-of-month / @yearly) are listed but excluded from the weekly heatmap.</li>
       <li>This is a configured-schedule planning model, not live Boskos occupancy.</li>
       <li>Dashboard refreshes daily at 08:00 IST from <code>openshift/release</code> (+ Sippy durations).</li>
@@ -1208,14 +1279,16 @@ function renderTabs() {{
 
 function renderMetrics(p) {{
   document.getElementById('profile-title').textContent = p.name;
+  const minAvail = Math.max(0, p.capacity - (p.peak_demand || 0));
   const items = [
-    ['Capacity', p.capacity],
+    ['Total leases (capacity)', p.capacity],
+    ['Peak leases in use', p.peak_demand],
+    ['Min leases available', minAvail],
     ['Jobs', p.job_count],
     ['Weekly/daily in heatmap', p.weekly_job_count],
     ['Low-frequency', p.low_frequency_job_count],
-    ['Peak demand', p.peak_demand],
     ['Overcommit hours / week', p.overcommit_hours],
-    ['Median hold duration', (p.median_duration_hours != null ? p.median_duration_hours + 'h' : '—')],
+    ['Median lease hold', (p.median_duration_hours != null ? p.median_duration_hours + 'h' : '—')],
     ['Sippy coverage', p.sippy_coverage != null ? Math.round(p.sippy_coverage * 100) + '%' : '—'],
   ];
   document.getElementById('metrics').innerHTML = items.map(([label, value]) =>
@@ -1234,10 +1307,11 @@ function renderHeatmap(p) {{
   for (let d = 0; d < 7; d++) {{
     html += `<tr><th>${{days[d]}}</th>`;
     for (let h = 0; h < 24; h++) {{
-      const demand = p.demand[d][h];
-      const cls = cellClass(demand, p.capacity);
-      const tip = `${{formatSlot(days[d], h)}} — demand ${{demand}} / ${{p.capacity}}`;
-      html += `<td class="${{cls}}" data-d="${{d}}" data-h="${{h}}" title="${{tip}}">${{demand}}</td>`;
+      const inUse = p.demand[d][h];
+      const available = p.capacity - inUse;
+      const cls = cellClass(inUse, p.capacity);
+      const tip = `${{formatSlot(days[d], h)}} — ${{inUse}} leases in use, ${{available}} available (of ${{p.capacity}})`;
+      html += `<td class="${{cls}}" data-d="${{d}}" data-h="${{h}}" title="${{tip}}">${{inUse}}</td>`;
     }}
     html += '</tr>';
   }}
@@ -1251,11 +1325,13 @@ function renderHeatmap(p) {{
 function showCell(p, d, h) {{
   const el = document.getElementById('cell-detail');
   const jobs = p.details[d][h] || [];
+  const inUse = jobs.length;
+  const available = p.capacity - inUse;
   el.style.display = 'block';
-  el.innerHTML = `<h3>${{formatSlot(DATA.day_names[d], h)}} — ${{jobs.length}} overlapping job(s) (capacity ${{p.capacity}})</h3>` +
+  el.innerHTML = `<h3>${{formatSlot(DATA.day_names[d], h)}} — ${{inUse}} lease(s) in use · ${{available}} available (capacity ${{p.capacity}})</h3>` +
     (jobs.length ? `<ul>${{jobs.map(j =>
-      `<li><code>${{j.as}}</code> · OCP ${{j.ocp_version}} · starts ${{j.start}} UTC · hold ${{j.duration_hours}}h ${{durationPill(j.duration_source)}} · <span class="mono">${{j.workflow || ''}}</span></li>`
-    ).join('')}}</ul>` : '<p style="color:var(--muted)">No overlapping weekly/daily jobs in this hour.</p>');
+      `<li><code>${{j.as}}</code> · OCP ${{j.ocp_version}} · starts ${{j.start}} UTC · lease hold ${{j.duration_hours}}h${{j.observed_duration_hours != null && j.observed_duration_hours !== j.duration_hours ? ` (observed ${{j.observed_duration_hours}}h)` : ''}} ${{durationPill(j.duration_source)}} · <span class="mono">${{j.workflow || ''}}</span></li>`
+    ).join('')}}</ul>` : '<p style="color:var(--muted)">No overlapping weekly/daily jobs — all leases available this hour.</p>');
 }}
 
 function renderSlots(p) {{
@@ -1263,13 +1339,13 @@ function renderSlots(p) {{
   const free = document.getElementById('free-slots');
   const busy = document.getElementById('busy-slots');
   blocks.innerHTML = (p.free_blocks || []).map(b =>
-    `<li><span>${{formatSlot(b.day, b.start_hour)}} → ${{String(b.end_hour).padStart(2,'0')}}:00 (${{b.hours}}h)</span><span class="badge">min spare ${{b.min_spare}}</span></li>`
+    `<li><span>${{formatSlot(b.day, b.start_hour)}} → ${{String(b.end_hour).padStart(2,'0')}}:00 (${{b.hours}}h)</span><span class="badge">≥${{b.min_spare}} leases free</span></li>`
   ).join('') || '<li style="color:var(--muted)">No multi-hour free windows under current model.</li>';
   free.innerHTML = p.free.slice(0, 18).map(c =>
-    `<li><span>${{formatSlot(c.day, c.hour)}}</span><span class="badge">demand ${{c.demand}} · spare ${{c.spare}}</span></li>`
+    `<li><span>${{formatSlot(c.day, c.hour)}}</span><span class="badge">${{c.demand}} in use · ${{c.spare}} available</span></li>`
   ).join('') || '<li style="color:var(--muted)">No free capacity under current model.</li>';
   busy.innerHTML = p.busiest.slice(0, 18).map(c =>
-    `<li><span>${{formatSlot(c.day, c.hour)}}</span><span class="badge">demand ${{c.demand}} / ${{c.capacity}}</span></li>`
+    `<li><span>${{formatSlot(c.day, c.hour)}}</span><span class="badge">${{c.demand}} in use / ${{c.capacity}} · ${{c.spare}} free</span></li>`
   ).join('');
 }}
 
@@ -1313,14 +1389,16 @@ function renderJobs(p) {{
     const prow = j.prow_job_name ? `<a href="${{PROW_HISTORY_BASE}}/${{j.prow_job_name}}" target="_blank" rel="noopener">prow</a>` : '';
     const src = j.source_file ? `<a href="${{href}}" target="_blank" rel="noopener">config</a>` : '';
     const links = [prow, src].filter(Boolean).join(' · ');
-    const dur = j.duration_hours != null ? `${{j.duration_hours}}h` : '—';
+    const hold = j.duration_hours != null ? `${{j.duration_hours}}h` : '—';
+    const observed = (j.observed_duration_hours != null && j.observed_duration_hours !== j.duration_hours)
+      ? ` <span style="color:var(--muted)">(obs ${{j.observed_duration_hours}}h)</span>` : '';
     return `
     <tr>
       <td><code>${{j.as}}</code></td>
       <td>${{j.ocp_version}}</td>
       <td class="mono">${{j.cron || j.interval || ''}}</td>
       <td>${{j.schedule_class}}</td>
-      <td>${{dur}} ${{durationPill(j.duration_source)}}</td>
+      <td title="Full job wall-clock (pre→test→post) plus lease buffer">${{hold}}${{observed}} ${{durationPill(j.duration_source)}}</td>
       <td class="mono">${{j.workflow || ''}}</td>
       <td style="font-size:.75rem;white-space:nowrap">${{links}}</td>
     </tr>`;
@@ -1417,11 +1495,14 @@ def main() -> int:
         default_hours=args.duration_hours,
         min_hours=args.sippy_min_hours,
         max_hours=args.sippy_max_hours,
+        lease_buffer_minutes=args.lease_buffer_minutes,
     )
     print(
-        f"Durations: sippy={duration_meta['matched']} "
+        f"Lease holds (full job wall-clock pre→test→post): "
+        f"sippy={duration_meta['matched']} "
         f"workflow={duration_meta['workflow_fallback']} "
-        f"default={duration_meta['default_fallback']}",
+        f"default={duration_meta['default_fallback']} "
+        f"buffer={args.lease_buffer_minutes:g}m",
         flush=True,
     )
 
@@ -1464,7 +1545,9 @@ def main() -> int:
                     "source_file": j["source_file"],
                     "timeout": j["timeout"],
                     "weekly_starts": len(j.get("slots") or []),
+                    "observed_duration_hours": j.get("observed_duration_hours"),
                     "duration_hours": j.get("duration_hours"),
+                    "lease_buffer_minutes": j.get("lease_buffer_minutes"),
                     "duration_source": j.get("duration_source"),
                     "prow_job_name": j.get("prow_job_name"),
                     "sippy": j.get("sippy"),
@@ -1523,8 +1606,9 @@ def main() -> int:
     print(f"\nWrote report to {out_dir}")
     print(f"Fingerprint: {fingerprint}")
     print(
-        f"Duration model: sippy={'on' if args.fetch_sippy_durations else 'off'} "
-        f"| fallback={args.duration_hours}h | jobs={len(jobs)}"
+        f"Duration model: full ProwJob wall-clock | "
+        f"sippy={'on' if args.fetch_sippy_durations else 'off'} "
+        f"| fallback={args.duration_hours}h | buffer={args.lease_buffer_minutes:g}m | jobs={len(jobs)}"
     )
     for profile in profiles:
         info = per_profile[profile]

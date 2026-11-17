@@ -60,7 +60,8 @@ jobs:
             --release-repo .openshift-release \
             --out-dir docs \
             --fetch-sippy-durations \
-            --duration-hours 5
+            --duration-hours 5 \
+            --lease-buffer-minutes 15
 
       - name: Detect schedule changes
         id: diff
