@@ -44,6 +44,29 @@ DEFAULT_PROFILES = (
 )
 
 DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+DAY_FULL = [
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+]
+MONTH_NAMES = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+]
 RELEASE_BLOB_BASE = "https://github.com/openshift/release/blob/master"
 SIPPY_API = "https://sippy.dptools.openshift.org"
 PROW_HISTORY_BASE = "https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs"
@@ -347,6 +370,113 @@ def parse_field(field: str, lo: int, hi: int) -> list[int]:
             if lo <= n <= hi:
                 values.add(n)
     return sorted(values)
+
+
+def _format_english_list(items: list[str]) -> str:
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    if len(items) == 2:
+        return f"{items[0]} and {items[1]}"
+    return ", ".join(items[:-1]) + f", and {items[-1]}"
+
+
+def _ordinal(n: int) -> str:
+    if 10 <= n % 100 <= 20:
+        suf = "th"
+    else:
+        suf = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suf}"
+
+
+def _describe_days(dows: list[int]) -> str:
+    if set(dows) == set(range(7)):
+        return "every day"
+    ranges: list[tuple[int, int]] = []
+    start = prev = dows[0]
+    for d in dows[1:]:
+        if d == prev + 1:
+            prev = d
+            continue
+        ranges.append((start, prev))
+        start = prev = d
+    ranges.append((start, prev))
+    parts: list[str] = []
+    for a, b in ranges:
+        if a == b:
+            parts.append(DAY_FULL[a])
+        elif b == a + 1:
+            parts.extend([DAY_FULL[a], DAY_FULL[b]])
+        else:
+            parts.append(f"{DAY_FULL[a]}–{DAY_FULL[b]}")
+    return _format_english_list(parts)
+
+
+def _describe_times(minutes: list[int], hours: list[int]) -> str:
+    times = [f"{h:02d}:{m:02d}" for h in hours for m in minutes]
+    if len(times) == 1:
+        return f"at {times[0]} UTC"
+    if len(hours) == 24 and minutes == [0]:
+        return "every hour at :00 UTC"
+    if len(times) <= 4:
+        return "at " + _format_english_list(times) + " UTC"
+    if len(minutes) == 1 and hours == list(range(hours[0], hours[-1] + 1)):
+        return (
+            f"hourly from {hours[0]:02d}:{minutes[0]:02d} "
+            f"to {hours[-1]:02d}:{minutes[0]:02d} UTC"
+        )
+    return f"at {len(times)} times UTC ({times[0]} … {times[-1]})"
+
+
+def cron_to_english(expr: str | None) -> str:
+    """Convert a 5-field Prow cron (UTC) into a plain-English schedule."""
+    if not expr:
+        return ""
+    raw = expr.strip().strip("'\"")
+    alias_note = ""
+    if raw in CRON_ALIASES:
+        alias_note = raw
+        raw = CRON_ALIASES[raw]
+    parts = raw.split()
+    if len(parts) != 5:
+        return f"Custom schedule ({expr})"
+    minute_s, hour_s, dom_s, mon_s, dow_s = parts
+    try:
+        minutes = parse_field(minute_s, 0, 59)
+        hours = parse_field(hour_s, 0, 23)
+        doms = [] if dom_s in ("*", "?") else parse_field(dom_s, 1, 31)
+        mons = [] if mon_s in ("*", "?") else parse_field(mon_s, 1, 12)
+        if dow_s in ("*", "?"):
+            dows = list(range(7))
+        else:
+            dows = parse_field(dow_s.replace("7", "0"), 0, 6)
+            dows = sorted({0 if d == 7 else d for d in dows})
+    except ValueError:
+        return f"Custom schedule ({expr})"
+
+    time_bit = _describe_times(minutes, hours)
+    if doms or mons:
+        month_bit = (
+            _format_english_list([MONTH_NAMES[m - 1] for m in mons]) if mons else "every month"
+        )
+        day_bit = _format_english_list([_ordinal(d) for d in doms]) if doms else "day 1"
+        if mons and len(mons) == 1 and doms and len(doms) == 1:
+            text = f"Every year on {MONTH_NAMES[mons[0] - 1]} {day_bit} {time_bit}"
+        elif mons and not doms:
+            text = f"On every day in {month_bit} {time_bit}"
+        elif doms and not mons:
+            text = f"On the {day_bit} of every month {time_bit}"
+        else:
+            text = f"On the {day_bit} of {month_bit} {time_bit}"
+    elif set(dows) == set(range(7)):
+        text = f"Every day {time_bit}"
+    else:
+        text = f"Every {_describe_days(dows)} {time_bit}"
+
+    if alias_note:
+        text += f" ({alias_note})"
+    return text
 
 
 def classify_and_expand_cron(expr: str) -> tuple[str, list[tuple[int, int, int]]]:
@@ -817,6 +947,7 @@ def write_csv(
         "job",
         "ocp_version",
         "cron",
+        "cron_english",
         "interval",
         "schedule_class",
         "timeout",
@@ -846,6 +977,7 @@ def write_csv(
                     "job": job["as"],
                     "ocp_version": job["ocp_version"],
                     "cron": job["cron"] or "",
+                    "cron_english": job.get("cron_english") or "",
                     "interval": job["interval"] or "",
                     "schedule_class": job.get("schedule_class", ""),
                     "timeout": job["timeout"] or "",
@@ -1407,6 +1539,13 @@ table.jobs tbody tr:hover, table.wf tbody tr:hover {{ background: rgba(15, 98, 2
 }}
 .help-list li {{ margin: 0.35rem 0; }}
 .help-list strong {{ color: var(--text); }}
+.cron-english {{
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.35;
+  min-width: 12rem;
+  max-width: 22rem;
+}}
 </style>
 </head>
 <body>
@@ -1563,7 +1702,7 @@ table.jobs tbody tr:hover, table.wf tbody tr:hover {{ background: rgba(15, 98, 2
       <table class="jobs">
         <thead>
           <tr>
-            <th>Job</th><th>OCP</th><th>Cron</th><th>Class</th>
+            <th>Job</th><th>OCP</th><th>Cron</th><th>Schedule (plain English)</th><th>Class</th>
             <th>Lease hold</th><th>Workflow</th><th>Links</th>
           </tr>
         </thead>
@@ -1787,7 +1926,7 @@ function renderJobs(p) {{
     if (dsrc === 'workflow' && j.duration_source !== 'workflow-median') return false;
     if (dsrc === 'default' && j.duration_source !== 'default') return false;
     if (!q) return true;
-    const hay = [j.as, j.cron || '', j.workflow || '', j.source_file, j.ocp_version, j.prow_job_name || ''].join(' ').toLowerCase();
+    const hay = [j.as, j.cron || '', j.cron_english || '', j.workflow || '', j.source_file, j.ocp_version, j.prow_job_name || ''].join(' ').toLowerCase();
     return hay.includes(q);
   }});
   document.getElementById('jobs-body').innerHTML = rows.map(j => {{
@@ -1798,17 +1937,19 @@ function renderJobs(p) {{
     const hold = j.duration_hours != null ? `${{j.duration_hours}}h` : '—';
     const observed = (j.observed_duration_hours != null && j.observed_duration_hours !== j.duration_hours)
       ? ` <span style="color:var(--muted)">(obs ${{j.observed_duration_hours}}h)</span>` : '';
+    const english = j.cron_english || (j.interval ? ('Every ' + j.interval) : '');
     return `
     <tr>
       <td><code>${{j.as}}</code></td>
       <td>${{j.ocp_version}}</td>
       <td class="mono">${{j.cron || j.interval || ''}}</td>
+      <td class="cron-english">${{english}}</td>
       <td>${{j.schedule_class}}</td>
       <td title="Full job wall-clock (pre→test→post) plus lease buffer">${{hold}}${{observed}} ${{durationPill(j.duration_source)}}</td>
       <td class="mono">${{j.workflow || ''}}</td>
       <td style="font-size:.75rem;white-space:nowrap">${{links}}</td>
     </tr>`;
-  }}).join('') || '<tr><td colspan="7" style="color:var(--muted)">No jobs match filters.</td></tr>';
+  }}).join('') || '<tr><td colspan="8" style="color:var(--muted)">No jobs match filters.</td></tr>';
 }}
 
 function renderAll() {{
@@ -1888,10 +2029,13 @@ def main() -> int:
     for job in jobs:
         if job["cron"]:
             schedule_class, slots = classify_and_expand_cron(job["cron"])
+            job["cron_english"] = cron_to_english(job["cron"])
         elif job["interval"]:
             schedule_class, slots = "interval-like", []
+            job["cron_english"] = f"Every {job['interval']}"
         else:
             schedule_class, slots = "invalid", []
+            job["cron_english"] = ""
         job["schedule_class"] = schedule_class
         job["slots"] = slots
 
@@ -1945,6 +2089,7 @@ def main() -> int:
                     "as": j["as"],
                     "ocp_version": j["ocp_version"],
                     "cron": j["cron"],
+                    "cron_english": j.get("cron_english"),
                     "interval": j["interval"],
                     "schedule_class": j["schedule_class"],
                     "workflow": j["workflow"],
