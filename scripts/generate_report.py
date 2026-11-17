@@ -25,7 +25,9 @@ import sys
 import urllib.error
 import urllib.request
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+
+IST = timezone(timedelta(hours=5, minutes=30))
 from pathlib import Path
 from typing import Any
 
@@ -2108,7 +2110,12 @@ def main() -> int:
         }
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    now_utc = datetime.now(timezone.utc)
+    now_ist = now_utc.astimezone(IST)
+    generated_at = (
+        f"{now_utc.strftime('%Y-%m-%d %H:%M:%S')} UTC · "
+        f"{now_ist.strftime('%Y-%m-%d %H:%M:%S')} IST"
+    )
     fingerprint = schedule_fingerprint(jobs, lease_map, leases, duration_meta)
 
     write_csv(out_dir / "jobs.csv", jobs, lease_map, leases)
