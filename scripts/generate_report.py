@@ -1922,9 +1922,18 @@ ul.slots li:last-child {{ border-bottom: 0; }}
   50% {{ transform: translateY(3px); opacity: 1; }}
 }}
 .badge {{
-  font-size: 0.72rem; font-weight: 560; padding: 0.18rem 0.45rem;
-  border-radius: 6px; background: var(--panel-soft);
-  border: 1px solid var(--border); color: var(--text-secondary); white-space: nowrap;
+  font-size: 0.75rem; font-weight: 650; padding: 0.22rem 0.55rem;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ok-bg) 85%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--ok) 45%, var(--border));
+  color: var(--ok-text);
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}}
+[data-theme="dark"] .badge {{
+  background: rgba(66, 190, 101, 0.18);
+  border-color: rgba(66, 190, 101, 0.55);
+  color: #9ef0b3;
 }}
 .filters {{ display: flex; flex-wrap: wrap; gap: 0.55rem; margin-bottom: 0.85rem; }}
 .filters input, .filters select {{
