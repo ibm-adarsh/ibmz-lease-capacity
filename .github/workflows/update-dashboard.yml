@@ -40,7 +40,7 @@ jobs:
           cd .openshift-release
           git sparse-checkout set \
             ci-operator/config \
-            ci-operator/step-registry/cluster-profiles \
+            ci-operator/step-registry \
             core-services/prow/02_config
           echo "RELEASE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
           echo "Cloned openshift/release @ $(git rev-parse --short HEAD)"
