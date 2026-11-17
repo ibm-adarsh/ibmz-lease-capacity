@@ -59,6 +59,7 @@ jobs:
           python3 scripts/generate_report.py \
             --release-repo .openshift-release \
             --out-dir docs \
+            --fetch-sippy-durations \
             --duration-hours 5
 
       - name: Detect schedule changes
@@ -93,7 +94,7 @@ jobs:
           git commit -m "$(cat <<EOF
           chore: refresh IBM Z lease dashboard from openshift/release@${SHORT}
 
-          Auto-update at 08:00 IST when jobs, crons, or lease capacity change.
+          Auto-update at 08:00 IST when jobs, crons, lease capacity, or Sippy durations change.
           Fingerprint: ${{ steps.diff.outputs.new }}
           EOF
           )"
@@ -107,5 +108,6 @@ jobs:
             echo "- openshift/release: \`${RELEASE_SHA:0:12}\`"
             echo "- fingerprint: \`${{ steps.diff.outputs.new }}\`"
             echo "- changed: \`${{ steps.diff.outputs.changed }}\`"
+            echo "- duration model: Sippy averages + workflow/default fallback"
             echo "- pages: https://ibm-adarsh.github.io/ibmz-lease-capacity/"
           } >> "$GITHUB_STEP_SUMMARY"

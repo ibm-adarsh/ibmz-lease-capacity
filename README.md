@@ -7,27 +7,31 @@ Interactive dashboard for **IBM Z / s390x** CI lease usage across
 
 ## What it shows
 
-- All periodic jobs using:
+- Full cluster profile names:
   - `libvirt-s390x-vpn`
   - `libvirt-s390x-vpn-amd64`
   - `libvirt-s390x-vpn-arm64`
   - `libvirt-s390x-vpn-hcp`
   - `libvirt-s390x-vpn-oz`
-- OCP version, cron, workflow, and source file (linked into `openshift/release`)
-- Week × hour **concurrency heatmap** (UTC) vs Boskos lease capacity
-- Busiest hours and best free slots for scheduling more jobs
+- All periodic jobs using those profiles across OCP versions
+- Cron timing, workflow, config link, and Prow job-history link
+- Observed hold durations from [Sippy](https://sippy.dptools.openshift.org) (with workflow / default fallbacks)
+- Week × hour **concurrency heatmap** vs Boskos lease capacity
+- Busiest hours, free hours, and multi-hour free windows for scheduling
+- UTC / IST display toggle
 
 ## Automatic refresh
 
 GitHub Actions runs **every day at 08:00 IST** (`30 2 * * *` UTC):
 
 1. Sparse-clones `openshift/release@master`
-2. Regenerates `docs/` (HTML + CSV + JSON)
-3. Commits **only when** the schedule fingerprint changes:
+2. Fetches Sippy average durations for relevant OCP releases
+3. Regenerates `docs/` (HTML + CSV + JSON)
+4. Commits **only when** the schedule fingerprint changes:
    - new / removed jobs on these profiles
    - cron / interval changes
    - Boskos lease capacity / name changes
-   - duration model input changes
+   - modeled duration inputs change (Sippy / workflow / default)
 
 Manual run: **Actions → Update IBM Z lease dashboard → Run workflow**
 
@@ -41,6 +45,7 @@ pip install -r requirements.txt
 python3 scripts/generate_report.py \
   --release-repo /path/to/openshift/release \
   --out-dir docs \
+  --fetch-sippy-durations \
   --duration-hours 5
 ```
 
@@ -50,8 +55,12 @@ Then open `docs/index.html`.
 
 This is a **configured schedule planning model**, not live Boskos occupancy.
 
-- Each periodic holds **1 lease** for `--duration-hours` after each cron start (default 5h)
-- Prow cron times are **UTC**
+- Each periodic holds **1 lease** for a modeled duration after each cron start
+- Duration preference order:
+  1. Sippy `current` / `previous` average minutes (conservative max)
+  2. Median of Sippy-matched jobs that share the same workflow
+  3. `--duration-hours` fallback (default 5h)
+- Prow cron times are **UTC** (IST toggle only changes labels)
 - `low-frequency` jobs (`@yearly` / day-of-month) are listed but excluded from the weekly heatmap
 - Presubmits are excluded
 
