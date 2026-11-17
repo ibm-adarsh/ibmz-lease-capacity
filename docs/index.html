@@ -390,10 +390,10 @@ table.heatmap td {
   border: 1px solid transparent;
 }
 table.heatmap td:hover { transform: scale(1.04); outline: 1px solid var(--border-strong); z-index: 1; }
-table.heatmap td.idle { background: var(--idle-bg); color: var(--idle-text); border-color: #d3dae6; }
-table.heatmap td.ok { background: var(--ok-bg); color: var(--ok-text); border-color: #a7f0c0; }
-table.heatmap td.warn { background: var(--warn-bg); color: var(--warn-text); border-color: #f1d67a; }
-table.heatmap td.bad { background: var(--bad-bg); color: var(--bad-text); border-color: #ffd7d9; }
+table.heatmap td.idle { background: var(--idle-bg); color: var(--idle-text); border-color: var(--border); }
+table.heatmap td.ok { background: var(--ok-bg); color: var(--ok-text); border-color: color-mix(in srgb, var(--ok) 35%, transparent); }
+table.heatmap td.warn { background: var(--warn-bg); color: var(--warn-text); border-color: color-mix(in srgb, var(--warn) 35%, transparent); }
+table.heatmap td.bad { background: var(--bad-bg); color: var(--bad-text); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
 .legend {
   display: flex; gap: 1rem; flex-wrap: wrap;
   color: var(--muted); font-size: 0.8rem; margin: 0.85rem 0 0;
