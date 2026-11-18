@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-17 13:59:17 UTC \u00b7 2026-11-17 19:29:17 IST",
+  "generated_at": "2026-11-18 10:30:25 UTC \u00b7 2026-11-18 16:00:25 IST",
   "duration_meta": {
     "enabled": true,
     "default_hours": 5.0,
@@ -27,9 +27,9 @@
     "default_fallback": 1,
     "workflow_medians_hours": {
       "hypershift-mce-ibmz-conformance-hcpmulti-kubevirt|install": 1.0,
-      "hypershift-mce-ibmz-conformance-s390xmgmt-kubevirt-extinfra|install": 3.0,
-      "hypershift-mce-ibmz-conformance-s390xmgmt-kubevirt-oz|install": 3.25,
-      "kueue-operator-libvirt-s390x|install": 1.5,
+      "hypershift-mce-ibmz-conformance-s390xmgmt-kubevirt-extinfra|install": 2.5,
+      "hypershift-mce-ibmz-conformance-s390xmgmt-kubevirt-oz|install": 3.5,
+      "kueue-operator-libvirt-s390x|install": 1.38,
       "openshift-e2e-libvirt-heterogeneous-vpn|install": 3.25,
       "openshift-e2e-libvirt-upi|install": 6.75,
       "openshift-e2e-libvirt-vpn|install": 3.0,
@@ -41,8 +41,8 @@
       "e2e-external-ibmz-agent-libvirt-z-z|install": 3.25,
       "e2e-external-ibmz-upi-libvirt-z-z|install": 6.75,
       "e2e-ibmz-multi-mgmt-ovn-conformance-hcpmulti-z-zx|install": 1.0,
-      "e2e-ibmz-s390x-mgmt-ovn-conformance-virt-extinfra-z-z|install": 3.0,
-      "e2e-ibmz-s390x-mgmt-ovn-conformance-virt-z-z|install": 3.25,
+      "e2e-ibmz-s390x-mgmt-ovn-conformance-virt-extinfra-z-z|install": 2.5,
+      "e2e-ibmz-s390x-mgmt-ovn-conformance-virt-z-z|install": 3.5,
       "ocp-e2e-ovn-agent-remote-libvirt-multi-z-z|install": 3.25,
       "ocp-e2e-ovn-remote-libvirt-multi-z-z|install": 2.5,
       "ocp-e2e-ovn-remote-libvirt-multi-z-za|install": 3.75,
@@ -50,24 +50,24 @@
       "ocp-e2e-ovn-remote-libvirt-s390x|install": 2.5,
       "ocp-e2e-serial-ovn-remote-libvirt-multi-z-z|install": 3.25,
       "ocp-e2e-serial-ovn-techpreview-remote-libvirt-multi-z-z|install": 4.0,
-      "ocp-fips-ovn-remote-libvirt-multi-z-z|install": 2.75,
+      "ocp-fips-ovn-remote-libvirt-multi-z-z|install": 3.0,
       "ocp-fips-ovn-remote-libvirt-s390x|install": 1.75,
-      "ocp-fips-ovn-techpreview-multi-z-z|install": 2.25,
+      "ocp-fips-ovn-techpreview-multi-z-z|install": 3.0,
       "ocp-fips-ovn-techpreview-remote-libvirt-multi-z-z|install": 3.5,
       "ocp-image-ecosystem-ovn-remote-libvirt-multi-z-z|install": 1.5,
-      "ocp-ovn-remote-libvirt-multi-z-z|upgrade": 2.5,
+      "ocp-ovn-remote-libvirt-multi-z-z|upgrade": 2.75,
       "ocp-ovn-remote-libvirt-s390x|upgrade": 2.25,
       "test-e2e-4-22-downstream|install": 1.5,
-      "test-e2e-4-22-upstream|install": 1.25
+      "test-e2e-4-22-upstream|install": 1.12
     }
   },
-  "fingerprint": "205e31bb0aa44a3e3c5765346aa198f120f53871fe2b2bb57f04970781db9ad9",
+  "fingerprint": "2cc7aa48e4387a1989317a9d2877b5adba71d86f2eb4d05ad3f378c78488e561",
   "source": {
-    "sha": "d1e8b9dbf76d8bd10018b3355f71fb64ee0cbd53",
-    "short_sha": "d1e8b9dbf76d",
-    "subject": "Remove unused IBM Z step-registry workflows and exclusive deps",
-    "committed_at": "2026-11-17T15:47:37+05:30",
-    "source_url": "https://github.com/openshift/release/commit/d1e8b9dbf76d8bd10018b3355f71fb64ee0cbd53"
+    "sha": "3544ba7aca0d96156a5042283e7481b17a52d892",
+    "short_sha": "3544ba7aca0d",
+    "subject": "Claim team's secrets for Obsint-Collection-team (#89023)",
+    "committed_at": "2026-11-18T10:17:17Z",
+    "source_url": "https://github.com/openshift/release/commit/3544ba7aca0d96156a5042283e7481b17a52d892"
   },
   "workflows": [
     {
@@ -94,7 +94,7 @@
       "profiles": [
         "libvirt-s390x-vpn-oz"
       ],
-      "median_duration_hours": 1.75,
+      "median_duration_hours": 1.62,
       "sippy_matched": 4
     },
     {
@@ -113,7 +113,7 @@
       "profiles": [
         "libvirt-s390x-vpn-hcp"
       ],
-      "median_duration_hours": 3.5,
+      "median_duration_hours": 3.75,
       "sippy_matched": 2
     },
     {
@@ -131,7 +131,7 @@
       "profiles": [
         "libvirt-s390x-vpn-hcp"
       ],
-      "median_duration_hours": 3.25,
+      "median_duration_hours": 2.75,
       "sippy_matched": 1
     },
     {
@@ -489,7 +489,7 @@
       "job_count": 3,
       "weekly_job_count": 3,
       "low_frequency_job_count": 0,
-      "peak_demand": 2,
+      "peak_demand": 1,
       "overcommit_hours": 0,
       "median_duration_hours": 2.25,
       "sippy_coverage": 1.0,
@@ -497,6 +497,22 @@
         {
           "day": "Sun",
           "dow": 0,
+          "start_hour": 0,
+          "end_hour": 24,
+          "hours": 24,
+          "min_spare": 1
+        },
+        {
+          "day": "Mon",
+          "dow": 1,
+          "start_hour": 0,
+          "end_hour": 24,
+          "hours": 24,
+          "min_spare": 1
+        },
+        {
+          "day": "Tue",
+          "dow": 2,
           "start_hour": 0,
           "end_hour": 24,
           "hours": 24,
@@ -511,47 +527,47 @@
           "min_spare": 1
         },
         {
-          "day": "Sat",
-          "dow": 6,
+          "day": "Thu",
+          "dow": 4,
           "start_hour": 0,
           "end_hour": 24,
           "hours": 24,
           "min_spare": 1
         },
         {
-          "day": "Mon",
-          "dow": 1,
-          "start_hour": 2,
-          "end_hour": 24,
-          "hours": 22,
-          "min_spare": 1
-        },
-        {
-          "day": "Tue",
-          "dow": 2,
-          "start_hour": 2,
-          "end_hour": 24,
-          "hours": 22,
-          "min_spare": 1
-        },
-        {
-          "day": "Thu",
-          "dow": 4,
-          "start_hour": 2,
-          "end_hour": 24,
-          "hours": 22,
-          "min_spare": 1
-        },
-        {
           "day": "Fri",
           "dow": 5,
-          "start_hour": 2,
+          "start_hour": 0,
           "end_hour": 24,
-          "hours": 22,
+          "hours": 24,
+          "min_spare": 1
+        },
+        {
+          "day": "Sat",
+          "dow": 6,
+          "start_hour": 0,
+          "end_hour": 24,
+          "hours": 24,
           "min_spare": 1
         }
       ],
       "top_free_slots": [
+        {
+          "day": "Sun",
+          "dow": 0,
+          "hour": 0,
+          "demand": 0,
+          "capacity": 2,
+          "spare": 2
+        },
+        {
+          "day": "Sun",
+          "dow": 0,
+          "hour": 1,
+          "demand": 0,
+          "capacity": 2,
+          "spare": 2
+        },
         {
           "day": "Sun",
           "dow": 0,
@@ -572,22 +588,6 @@
           "day": "Sun",
           "dow": 0,
           "hour": 4,
-          "demand": 0,
-          "capacity": 2,
-          "spare": 2
-        },
-        {
-          "day": "Sun",
-          "dow": 0,
-          "hour": 5,
-          "demand": 0,
-          "capacity": 2,
-          "spare": 2
-        },
-        {
-          "day": "Sun",
-          "dow": 0,
-          "hour": 6,
           "demand": 0,
           "capacity": 2,
           "spare": 2
@@ -675,73 +675,9 @@
       ],
       "top_busy_slots": [
         {
-          "day": "Mon",
-          "dow": 1,
-          "hour": 0,
-          "demand": 2,
-          "capacity": 2,
-          "spare": 0
-        },
-        {
-          "day": "Mon",
-          "dow": 1,
-          "hour": 1,
-          "demand": 2,
-          "capacity": 2,
-          "spare": 0
-        },
-        {
-          "day": "Tue",
-          "dow": 2,
-          "hour": 0,
-          "demand": 2,
-          "capacity": 2,
-          "spare": 0
-        },
-        {
-          "day": "Tue",
-          "dow": 2,
-          "hour": 1,
-          "demand": 2,
-          "capacity": 2,
-          "spare": 0
-        },
-        {
-          "day": "Thu",
-          "dow": 4,
-          "hour": 0,
-          "demand": 2,
-          "capacity": 2,
-          "spare": 0
-        },
-        {
-          "day": "Thu",
-          "dow": 4,
-          "hour": 1,
-          "demand": 2,
-          "capacity": 2,
-          "spare": 0
-        },
-        {
-          "day": "Fri",
-          "dow": 5,
-          "hour": 0,
-          "demand": 2,
-          "capacity": 2,
-          "spare": 0
-        },
-        {
-          "day": "Fri",
-          "dow": 5,
-          "hour": 1,
-          "demand": 2,
-          "capacity": 2,
-          "spare": 0
-        },
-        {
           "day": "Sun",
           "dow": 0,
-          "hour": 0,
+          "hour": 5,
           "demand": 1,
           "capacity": 2,
           "spare": 1
@@ -749,6 +685,22 @@
         {
           "day": "Sun",
           "dow": 0,
+          "hour": 6,
+          "demand": 1,
+          "capacity": 2,
+          "spare": 1
+        },
+        {
+          "day": "Mon",
+          "dow": 1,
+          "hour": 0,
+          "demand": 1,
+          "capacity": 2,
+          "spare": 1
+        },
+        {
+          "day": "Mon",
+          "dow": 1,
           "hour": 1,
           "demand": 1,
           "capacity": 2,
@@ -779,6 +731,38 @@
           "spare": 1
         },
         {
+          "day": "Mon",
+          "dow": 1,
+          "hour": 5,
+          "demand": 1,
+          "capacity": 2,
+          "spare": 1
+        },
+        {
+          "day": "Mon",
+          "dow": 1,
+          "hour": 6,
+          "demand": 1,
+          "capacity": 2,
+          "spare": 1
+        },
+        {
+          "day": "Tue",
+          "dow": 2,
+          "hour": 0,
+          "demand": 1,
+          "capacity": 2,
+          "spare": 1
+        },
+        {
+          "day": "Tue",
+          "dow": 2,
+          "hour": 1,
+          "demand": 1,
+          "capacity": 2,
+          "spare": 1
+        },
+        {
           "day": "Tue",
           "dow": 2,
           "hour": 2,
@@ -787,9 +771,25 @@
           "spare": 1
         },
         {
+          "day": "Tue",
+          "dow": 2,
+          "hour": 5,
+          "demand": 1,
+          "capacity": 2,
+          "spare": 1
+        },
+        {
+          "day": "Tue",
+          "dow": 2,
+          "hour": 6,
+          "demand": 1,
+          "capacity": 2,
+          "spare": 1
+        },
+        {
           "day": "Wed",
           "dow": 3,
-          "hour": 0,
+          "hour": 5,
           "demand": 1,
           "capacity": 2,
           "spare": 1
@@ -1134,7 +1134,7 @@
       "low_frequency_job_count": 0,
       "peak_demand": 2,
       "overcommit_hours": 0,
-      "median_duration_hours": 3.25,
+      "median_duration_hours": 3.75,
       "sippy_coverage": 1.0,
       "top_free_blocks": [
         {
@@ -1350,6 +1350,14 @@
           "spare": 2
         },
         {
+          "day": "Sun",
+          "dow": 0,
+          "hour": 21,
+          "demand": 2,
+          "capacity": 4,
+          "spare": 2
+        },
+        {
           "day": "Mon",
           "dow": 1,
           "hour": 9,
@@ -1414,25 +1422,17 @@
           "spare": 2
         },
         {
+          "day": "Tue",
+          "dow": 2,
+          "hour": 21,
+          "demand": 2,
+          "capacity": 4,
+          "spare": 2
+        },
+        {
           "day": "Wed",
           "dow": 3,
           "hour": 9,
-          "demand": 2,
-          "capacity": 4,
-          "spare": 2
-        },
-        {
-          "day": "Wed",
-          "dow": 3,
-          "hour": 10,
-          "demand": 2,
-          "capacity": 4,
-          "spare": 2
-        },
-        {
-          "day": "Wed",
-          "dow": 3,
-          "hour": 11,
           "demand": 2,
           "capacity": 4,
           "spare": 2
@@ -1774,7 +1774,7 @@
       "low_frequency_job_count": 0,
       "peak_demand": 4,
       "overcommit_hours": 0,
-      "median_duration_hours": 1.75,
+      "median_duration_hours": 1.62,
       "sippy_coverage": 1.0,
       "top_free_blocks": [
         {
