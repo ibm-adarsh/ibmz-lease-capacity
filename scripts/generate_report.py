@@ -1378,16 +1378,22 @@ def rank_slots(
     return busiest, free
 
 
-def contiguous_free_blocks(
-    demand: list[list[int]], capacity: int, min_spare: int = 1, min_hours: int = 2
-) -> list[dict[str, Any]]:
-    """Find contiguous free windows for scheduling advice (may wrap midnight/week)."""
-    n = 7 * 24
-    spare = [capacity - demand[d][h] for d in range(7) for h in range(24)]
-    blocks: list[dict[str, Any]] = []
+def scheduling_min_spare(capacity: int) -> int:
+    """Spare leases that make a window useful for adding work (≈ half capacity)."""
+    if capacity <= 1:
+        return 1
+    return max(2, (capacity + 1) // 2)
 
+
+def _contiguous_blocks_at_spare(
+    spare: list[int], min_spare: int, min_hours: int
+) -> list[dict[str, Any]]:
+    n = len(spare)
+    blocks: list[dict[str, Any]] = []
+    if n == 0:
+        return blocks
     if all(s >= min_spare for s in spare):
-        blocks.append(
+        return [
             {
                 "day": DAY_NAMES[0],
                 "dow": 0,
@@ -1396,10 +1402,9 @@ def contiguous_free_blocks(
                 "end_day": DAY_NAMES[0],
                 "end_hour": 0,
                 "hours": n,
-                "min_spare": min(spare) if spare else 0,
+                "min_spare": min(spare),
             }
-        )
-        return blocks
+        ]
 
     starts = [
         i
@@ -1434,6 +1439,39 @@ def contiguous_free_blocks(
         )
     blocks.sort(key=lambda b: (-b["min_spare"], -b["hours"], b["dow"], b["start_hour"]))
     return blocks
+
+
+def contiguous_free_blocks(
+    demand: list[list[int]], capacity: int, min_spare: int | None = None, min_hours: int = 3
+) -> list[dict[str, Any]]:
+    """Find quiet contiguous windows for scheduling advice (may wrap midnight/week).
+
+    Prefers stretches with ~half the leases still free so a full-week
+    "always ≥2 free" result is not treated as the best place to add jobs when
+    the profile regularly runs near capacity.
+    """
+    n = 7 * 24
+    spare = [capacity - demand[d][h] for d in range(7) for h in range(24)]
+    preferred = scheduling_min_spare(capacity)
+    if min_spare is not None:
+        targets = [max(1, min(capacity, min_spare))]
+    else:
+        targets = []
+        for t in (preferred, max(1, (capacity * 2 + 4) // 5), max(1, (capacity + 2) // 3), 2, 1):
+            v = max(1, min(capacity, t))
+            if v not in targets:
+                targets.append(v)
+
+    for threshold in targets:
+        blocks = _contiguous_blocks_at_spare(spare, threshold, min_hours)
+        useful = [
+            b
+            for b in blocks
+            if b["hours"] < n or b["min_spare"] >= preferred
+        ]
+        if useful:
+            return useful
+    return []
 
 
 def workflow_summary(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -2360,7 +2398,7 @@ table.jobs tbody tr:hover, table.wf tbody tr:hover {{ background: var(--accent-s
       <div class="slot-block-head">
         <p class="eyebrow">Scheduling</p>
         <h2>Best free windows</h2>
-        <p class="panel-lead">Longest open stretches — safest places to add jobs.</p>
+        <p class="panel-lead">Quiet multi-hour stretches with ample spare capacity — safest places to add jobs.</p>
       </div>
       <div class="slot-scroll">
         <ul class="slots" id="free-blocks"></ul>
@@ -2972,7 +3010,12 @@ function rankDisplaySlots(grid, capacity) {{
   return {{ busiest, free }};
 }}
 
-function contiguousDisplayBlocks(grid, capacity, minSpare = 1, minHours = 2) {{
+function schedulingMinSpare(capacity) {{
+  if (capacity <= 1) return 1;
+  return Math.max(2, Math.ceil(capacity / 2));
+}}
+
+function contiguousDisplayBlocks(grid, capacity, minSpare = 1, minHours = 3) {{
   const n = 7 * 24;
   const spare = [];
   for (let d = 0; d < 7; d++) for (let h = 0; h < 24; h++) spare.push(capacity - grid[d][h]);
@@ -3013,6 +3056,24 @@ function contiguousDisplayBlocks(grid, capacity, minSpare = 1, minHours = 2) {{
   return blocks;
 }}
 
+function bestDisplayFreeBlocks(grid, capacity) {{
+  // Prefer quiet stretches (~half capacity free). Skip a trivial full-week
+  // "always ≥2 free" result when the profile regularly runs near capacity.
+  const preferred = schedulingMinSpare(capacity);
+  const targets = [];
+  for (const t of [preferred, Math.ceil(capacity * 0.4), Math.ceil(capacity * 0.3), 2, 1]) {{
+    const v = Math.max(1, Math.min(capacity, t));
+    if (!targets.includes(v)) targets.push(v);
+  }}
+  const weekHours = 7 * 24;
+  for (const minSpare of targets) {{
+    const blocks = contiguousDisplayBlocks(grid, capacity, minSpare, 3)
+      .filter(b => b.hours < weekHours || b.min_spare >= preferred);
+    if (blocks.length) return blocks.slice(0, 16);
+  }}
+  return [];
+}}
+
 function renderSlots(p) {{
   const blocksEl = document.getElementById('free-blocks');
   const freeEl = document.getElementById('free-slots');
@@ -3020,7 +3081,7 @@ function renderSlots(p) {{
   // Always derive lists from the active timezone grid so IST matches the heatmap.
   const grid = buildDisplayDemandGrid(p);
   const ranked = rankDisplaySlots(grid, p.capacity);
-  const blocks = contiguousDisplayBlocks(grid, p.capacity);
+  const blocks = bestDisplayFreeBlocks(grid, p.capacity);
   blocksEl.innerHTML = blocks.map(b =>
     `<li><span>${{formatDisplaySlot(b.dow, b.start_hour)}} → ${{formatDisplaySlot(b.end_dow, b.end_hour)}} (${{b.hours}}h)</span><span class="badge">≥${{b.min_spare}} leases free</span></li>`
   ).join('') || '<li style="color:var(--muted)">No multi-hour free windows under current model.</li>';
