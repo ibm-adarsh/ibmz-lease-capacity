@@ -659,7 +659,7 @@ table.jobs tbody tr:hover, table.wf tbody tr:hover { background: var(--accent-so
             <button type="button" data-tz="IST">IST</button>
           </div>
         </div>
-        <span class="toolbar-note">Heatmap stays on cron UTC; labels convert when IST is selected.</span>
+        <span class="toolbar-note">IST remaps the heatmap, free windows, and job start times (cron source stays UTC).</span>
       </div>
     </div>
     <p class="lede">See when <code>libvirt-s390x-vpn*</code> jobs need leases — and how much capacity is still free.</p>
@@ -698,10 +698,11 @@ table.jobs tbody tr:hover, table.wf tbody tr:hover { background: var(--accent-so
       <p class="eyebrow">Weekly view</p>
       <h2>Concurrency heatmap</h2>
       <p class="panel-lead">
-        Each cell is concurrent leases in use during that <strong>UTC</strong> hour
+        Each cell is concurrent leases in use during that hour
         (most jobs hold 1 lease; some workflows hold more of the same type).
-        Hold time = full job wall-clock (pre/test/post) + lease buffer. Columns stay UTC even when
-        the IST toggle is on — tooltips and free-window labels convert. Click a cell for details.
+        Hold time = full job wall-clock (pre/test/post) + lease buffer.
+        Toggle <strong>IST</strong> to remap columns, cell details, and job start times from cron UTC (+05:30).
+        Click a cell for details.
       </p>
     </div>
     <div class="heatmap-wrap">
@@ -812,7 +813,7 @@ table.jobs tbody tr:hover, table.wf tbody tr:hover { background: var(--accent-so
       </article>
       <article class="guide-card">
         <h3>2. Read the heatmap</h3>
-        <p>Each cell is leases in use that <strong>UTC</strong> hour. Available = total − in use. Click a cell to see which jobs overlap.</p>
+        <p>Each cell is leases in use that hour. Toggle IST to remap the grid from cron UTC. Available = total − in use. Click a cell to see which jobs overlap.</p>
       </article>
       <article class="guide-card">
         <h3>3. Find free windows</h3>
@@ -888,22 +889,99 @@ function cellClass(demand, capacity) {
   return 'ok';
 }
 
+const IST_OFFSET_MIN = 5 * 60 + 30;
+const WEEK_MIN = 7 * 24 * 60;
+
+function pad2(n) {
+  return String(n).padStart(2, '0');
+}
+
 function formatHourLabel(hour) {
-  // Heatmap columns are always cron UTC hours so day rows stay aligned.
-  // IST mode is applied in tooltips / free-window labels via formatSlot.
-  return String(hour).padStart(2, '0');
+  return pad2(hour);
+}
+
+/** Shift a week-minute timestamp by delta minutes, wrapping the 7-day week. */
+function wrapWeekMinutes(total) {
+  return ((total % WEEK_MIN) + WEEK_MIN) % WEEK_MIN;
+}
+
+/** Convert UTC day-index + hour(+optional minute) → IST day-index + clock. */
+function utcPartsToIst(dow, hour, minute = 0) {
+  const total = wrapWeekMinutes(dow * 24 * 60 + hour * 60 + minute + IST_OFFSET_MIN);
+  return {
+    dow: Math.floor(total / (24 * 60)),
+    hour: Math.floor((total % (24 * 60)) / 60),
+    minute: total % 60,
+  };
+}
+
+/** Convert IST day-index + hour → UTC day-index + hour that owns that IST hour start. */
+function istPartsToUtc(dow, hour, minute = 0) {
+  const total = wrapWeekMinutes(dow * 24 * 60 + hour * 60 + minute - IST_OFFSET_MIN);
+  return {
+    dow: Math.floor(total / (24 * 60)),
+    hour: Math.floor((total % (24 * 60)) / 60),
+    minute: total % 60,
+  };
+}
+
+/** Heatmap lookup: display (d,h) in active tz → underlying UTC demand indices. */
+function displayToUtc(d, h) {
+  if (tz === 'UTC') return { dow: d, hour: h };
+  const u = istPartsToUtc(d, h, 0);
+  return { dow: u.dow, hour: u.hour };
 }
 
 function formatSlot(day, hour) {
-  if (tz === 'UTC') return `${day} ${String(hour).padStart(2,'0')}:00 UTC`;
-  const total = hour * 60 + 5 * 60 + 30;
+  // Input is always a UTC hour bucket (free windows / busiest lists store UTC).
+  if (tz === 'UTC') return `${day} ${pad2(hour)}:00 UTC`;
   let dow = DATA.day_names.indexOf(day);
-  let dayCarry = Math.floor(total / (24 * 60));
-  const mins = ((total % (24 * 60)) + 24 * 60) % (24 * 60);
-  const hh = Math.floor(mins / 60);
-  const mm = mins % 60;
-  dow = (dow + dayCarry) % 7;
-  return `${DATA.day_names[dow]} ${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')} IST`;
+  if (dow < 0) dow = 0;
+  const ist = utcPartsToIst(dow, hour, 0);
+  return `${DATA.day_names[ist.dow]} ${pad2(ist.hour)}:${pad2(ist.minute)} IST`;
+}
+
+function formatDisplaySlot(d, h) {
+  // Input is the heatmap display coordinate in the active timezone.
+  const day = DATA.day_names[d];
+  if (tz === 'UTC') return `${day} ${pad2(h)}:00 UTC`;
+  return `${day} ${pad2(h)}:00 IST`;
+}
+
+function formatJobStart(startStr) {
+  // Job detail starts are stored as "Day HH:MM" in UTC.
+  const m = String(startStr || '').match(/^([A-Za-z]+)\s+(\d{1,2}):(\d{2})/);
+  if (!m) return startStr || '—';
+  const day = m[1];
+  const hour = Number(m[2]);
+  const minute = Number(m[3]);
+  if (tz === 'UTC') return `${day} ${pad2(hour)}:${pad2(minute)} UTC`;
+  let dow = DATA.day_names.indexOf(day);
+  if (dow < 0) return `${startStr} IST`;
+  const ist = utcPartsToIst(dow, hour, minute);
+  return `${DATA.day_names[ist.dow]} ${pad2(ist.hour)}:${pad2(ist.minute)} IST`;
+}
+
+function formatCronEnglish(text) {
+  // cron_english is authored in UTC; rewrite clock times when IST is selected.
+  if (tz === 'UTC' || !text) return text || '';
+  const longDays = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  let out = String(text);
+  // "Every Tuesday at 08:00 UTC" / "Tuesday at 08:00 UTC"
+  out = out.replace(
+    /\b(Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday)\b([^\d]{0,24})(\d{2}):(\d{2}) UTC/g,
+    (full, dayWord, mid, hh, mm) => {
+      const dow = longDays.indexOf(dayWord);
+      const ist = utcPartsToIst(dow, Number(hh), Number(mm));
+      return `${longDays[ist.dow]}}${mid}${pad2(ist.hour)}:${pad2(ist.minute)} IST`;
+    }
+  );
+  // Remaining bare times: "Every day at 00:40 UTC"
+  out = out.replace(/\b(\d{2}):(\d{2}) UTC\b/g, (full, hh, mm) => {
+    const ist = utcPartsToIst(0, Number(hh), Number(mm));
+    return `${pad2(ist.hour)}:${pad2(ist.minute)} IST`;
+  });
+  return out.replace(/\bUTC\b/g, 'IST');
 }
 
 function durationPill(j) {
@@ -994,16 +1072,18 @@ function renderMetrics(p) {
 
 function renderHeatmap(p) {
   const days = DATA.day_names;
+  const tzLabel = tz === 'IST' ? 'IST' : 'UTC';
   let html = '<tr><th></th>' + [...Array(24).keys()].map(h =>
-    `<th>${formatHourLabel(h)}${tz==='IST' ? '<span class="sub">IST</span>' : '<span class="sub">UTC</span>'}</th>`
+    `<th>${formatHourLabel(h)}<span class="sub">${tzLabel}</span></th>`
   ).join('') + '</tr>';
   for (let d = 0; d < 7; d++) {
     html += `<tr><th>${days[d]}</th>`;
     for (let h = 0; h < 24; h++) {
-      const inUse = p.demand[d][h];
+      const utc = displayToUtc(d, h);
+      const inUse = p.demand[utc.dow][utc.hour];
       const available = p.capacity - inUse;
       const cls = cellClass(inUse, p.capacity);
-      const tip = `${formatSlot(days[d], h)} — ${inUse} leases in use, ${available} available (of ${p.capacity})`;
+      const tip = `${formatDisplaySlot(d, h)} — ${inUse} leases in use, ${available} available (of ${p.capacity})`;
       html += `<td class="${cls}" data-d="${d}" data-h="${h}" title="${tip}">${inUse}</td>`;
     }
     html += '</tr>';
@@ -1017,13 +1097,14 @@ function renderHeatmap(p) {
 
 function showCell(p, d, h) {
   const el = document.getElementById('cell-detail');
-  const jobs = p.details[d][h] || [];
-  const inUse = jobs.length;
+  const utc = displayToUtc(d, h);
+  const jobs = p.details[utc.dow][utc.hour] || [];
+  const inUse = p.demand[utc.dow][utc.hour] || 0;
   const available = p.capacity - inUse;
   el.style.display = 'block';
-  el.innerHTML = `<h3>${formatSlot(DATA.day_names[d], h)} — ${inUse} lease(s) in use · ${available} available (capacity ${p.capacity})</h3>` +
+  el.innerHTML = `<h3>${formatDisplaySlot(d, h)} — ${inUse} lease(s) in use · ${available} available (capacity ${p.capacity})</h3>` +
     (jobs.length ? `<ul>${jobs.map(j =>
-      `<li><code>${j.as}</code> · OCP ${j.ocp_version} · starts ${j.start} UTC · lease hold ${j.duration_hours}h${j.observed_duration_hours != null && j.observed_duration_hours !== j.duration_hours ? ` (observed ${j.observed_duration_hours}h)` : ''} ${durationPill(j)} · <span class="mono">${j.workflow || ''}</span></li>`
+      `<li><code>${j.as}</code> · OCP ${j.ocp_version} · starts ${formatJobStart(j.start)} · lease hold ${j.duration_hours}h${j.observed_duration_hours != null && j.observed_duration_hours !== j.duration_hours ? ` (observed ${j.observed_duration_hours}h)` : ''} ${durationPill(j)} · <span class="mono">${j.workflow || ''}</span></li>`
     ).join('')}</ul>` : '<p style="color:var(--muted)">No overlapping weekly/daily jobs — all leases available this hour.</p>');
 }
 
@@ -1099,7 +1180,7 @@ function renderJobs(p) {
     const hold = j.duration_hours != null ? `${j.duration_hours}h` : '—';
     const observed = (j.observed_duration_hours != null && j.observed_duration_hours !== j.duration_hours)
       ? ` <span style="color:var(--muted)">(obs ${j.observed_duration_hours}h)</span>` : '';
-    const english = j.cron_english || (j.interval ? ('Every ' + j.interval) : '');
+    const english = formatCronEnglish(j.cron_english || (j.interval ? ('Every ' + j.interval) : ''));
     const holdTitle = (j.sippy && j.sippy.borrowed)
       ? `Full job wall-clock from same job on OCP ${j.sippy.release} (this version has no Sippy history), plus lease buffer`
       : 'Full job wall-clock (pre→test→post) plus lease buffer';

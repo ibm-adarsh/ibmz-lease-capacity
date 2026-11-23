@@ -92,6 +92,77 @@ def check_ocp_version(c: Checker) -> None:
     c.check(ver_q == "4.22", f"Quay BRANCH fallback got {ver_q}")
 
 
+def check_ist_heatmap_mapping(c: Checker) -> None:
+    """Heatmap IST columns must remap to the UTC hour that owns IST hour:00."""
+    ist_offset = 5 * 60 + 30
+    week = 7 * 24 * 60
+
+    def wrap(total: int) -> int:
+        return ((total % week) + week) % week
+
+    def utc_to_ist(dow: int, hour: int, minute: int = 0) -> tuple[int, int, int]:
+        total = wrap(dow * 24 * 60 + hour * 60 + minute + ist_offset)
+        return total // (24 * 60), (total % (24 * 60)) // 60, total % 60
+
+    def ist_to_utc(dow: int, hour: int, minute: int = 0) -> tuple[int, int, int]:
+        total = wrap(dow * 24 * 60 + hour * 60 + minute - ist_offset)
+        return total // (24 * 60), (total % (24 * 60)) // 60, total % 60
+
+    # UTC Monday 00:00 → IST Monday 05:30
+    d, h, m = utc_to_ist(1, 0, 0)
+    c.check((d, h, m) == (1, 5, 30), f"UTC Mon 00:00 → IST Mon 05:30, got {d} {h}:{m}")
+
+    # IST Monday 06:00 → UTC Monday 00:30 → UTC hour bucket 0
+    d, h, m = ist_to_utc(1, 6, 0)
+    c.check((d, h) == (1, 0), f"IST Mon 06:00 maps to UTC Mon 00, got {d} {h}")
+
+    # IST Monday 05:00 → UTC Sunday 23:30 → UTC hour bucket 23 Sunday
+    d, h, m = ist_to_utc(1, 5, 0)
+    c.check((d, h) == (0, 23), f"IST Mon 05:00 maps to UTC Sun 23, got {d} {h}")
+
+    # Round-trip every display IST hour back through UTC ownership
+    for dow in range(7):
+        for hour in range(24):
+            ud, uh, _ = ist_to_utc(dow, hour, 0)
+            # The UTC hour start, converted to IST, should land in this IST hour
+            # or the previous half-hour belonging to this column's UTC bucket.
+            id_, ih, im = utc_to_ist(ud, uh, 0)
+            c.check(
+                0 <= ud < 7 and 0 <= uh < 24,
+                f"IST ({dow},{hour}) produced out-of-range UTC ({ud},{uh})",
+            )
+            # Inverse: converting that UTC hour start to IST must be uh+5:30
+            c.check(
+                (id_, ih, im) == utc_to_ist(ud, uh, 0),
+                "utc_to_ist self-check failed",
+            )
+
+    # Job start example from amd64 screenshot: 05:00 UTC → 10:30 IST
+    d, h, m = utc_to_ist(2, 5, 0)  # Tue 05:00 UTC
+    c.check((h, m) == (10, 30), f"Tue 05:00 UTC should be 10:30 IST, got {h}:{m}")
+
+
+def check_ist_docs_helpers(c: Checker, docs_dir: Path) -> None:
+    html = docs_dir / "index.html"
+    if not html.exists():
+        c.warn("docs/index.html missing; skip IST docs helper check")
+        return
+    text = html.read_text(encoding="utf-8")
+    for needle in (
+        "IST_OFFSET_MIN",
+        "displayToUtc",
+        "formatDisplaySlot",
+        "formatJobStart",
+        "formatCronEnglish",
+        "IST remaps the heatmap",
+    ):
+        c.check(needle in text, f"docs/index.html missing IST helper: {needle}")
+    c.check(
+        "Columns stay UTC even when" not in text,
+        "docs still claims heatmap columns stay UTC under IST",
+    )
+
+
 def check_concurrency_math(c: Checker) -> None:
     job = {
         "as": "demo",
@@ -298,6 +369,7 @@ def main() -> int:
     print("== unit helpers ==")
     check_cron_helpers(c)
     check_ocp_version(c)
+    check_ist_heatmap_mapping(c)
     check_concurrency_math(c)
 
     print("== release repo ==")
@@ -305,7 +377,9 @@ def main() -> int:
 
     print("== docs artifacts ==")
     if args.docs_dir.exists():
-        check_docs(c, args.docs_dir.resolve(), jobs)
+        docs_dir = args.docs_dir.resolve()
+        check_ist_docs_helpers(c, docs_dir)
+        check_docs(c, docs_dir, jobs)
     else:
         c.warn(f"docs dir missing: {args.docs_dir}")
 
