@@ -215,6 +215,10 @@ def check_ist_docs_helpers(c: Checker, docs_dir: Path) -> None:
         "function renderTabs" in text and 'id="tabs"' in text,
         "docs must include profile tablist markup and renderTabs()",
     )
+    c.check(
+        "bestDisplayFreeBlocks" in text and "schedulingMinSpare" in text,
+        "docs should prefer high-spare free windows over trivial full-week blocks",
+    )
     # Behavioral: Monday–Thursday 22:00 UTC must become Tuesday–Friday under IST.
     # (Lightweight presence of the midnight-crossing rewriter path.)
     c.check(
