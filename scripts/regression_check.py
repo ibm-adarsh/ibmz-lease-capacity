@@ -207,6 +207,14 @@ def check_ist_docs_helpers(c: Checker, docs_dir: Path) -> None:
         "\x08(Sunday" not in text and "\x08UTC\x08" not in text,
         "docs formatCronEnglish must not contain backspace-corrupted regexes",
     )
+    c.check(
+        "durationPillfunction" not in text,
+        "docs JS must not concatenate function names (breaks profile tabs render)",
+    )
+    c.check(
+        "function renderTabs" in text and 'id="tabs"' in text,
+        "docs must include profile tablist markup and renderTabs()",
+    )
     # Behavioral: Monday–Thursday 22:00 UTC must become Tuesday–Friday under IST.
     # (Lightweight presence of the midnight-crossing rewriter path.)
     c.check(
