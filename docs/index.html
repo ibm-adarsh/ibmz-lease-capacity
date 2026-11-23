@@ -731,7 +731,7 @@ table.jobs tbody tr:hover, table.wf tbody tr:hover { background: var(--accent-so
       <div class="slot-block-head">
         <p class="eyebrow">Scheduling</p>
         <h2>Best free windows</h2>
-        <p class="panel-lead">Quiet multi-hour stretches with ample spare capacity — safest places to add jobs.</p>
+        <p class="panel-lead">Quiet multi-hour stretches with ≥40% of leases free — safest places to add jobs.</p>
       </div>
       <div class="slot-scroll">
         <ul class="slots" id="free-blocks"></ul>
@@ -1344,8 +1344,9 @@ function rankDisplaySlots(grid, capacity) {
 }
 
 function schedulingMinSpare(capacity) {
-  if (capacity <= 1) return 1;
-  return Math.max(2, Math.ceil(capacity / 2));
+  // ≥40% of leases free.
+  if (capacity <= 0) return 1;
+  return Math.max(1, Math.ceil(capacity * 0.4));
 }
 
 function contiguousDisplayBlocks(grid, capacity, minSpare = 1, minHours = 3) {
@@ -1390,11 +1391,11 @@ function contiguousDisplayBlocks(grid, capacity, minSpare = 1, minHours = 3) {
 }
 
 function bestDisplayFreeBlocks(grid, capacity) {
-  // Prefer quiet stretches (~half capacity free). Skip a trivial full-week
-  // "always ≥2 free" result when the profile regularly runs near capacity.
+  // Prefer quiet stretches (≥40% capacity free). Skip a trivial full-week
+  // "always a couple free" result when the profile regularly runs near capacity.
   const preferred = schedulingMinSpare(capacity);
   const targets = [];
-  for (const t of [preferred, Math.ceil(capacity * 0.4), Math.ceil(capacity * 0.3), 2, 1]) {
+  for (const t of [preferred, Math.ceil(capacity / 3), 2, 1]) {
     const v = Math.max(1, Math.min(capacity, t));
     if (!targets.includes(v)) targets.push(v);
   }
