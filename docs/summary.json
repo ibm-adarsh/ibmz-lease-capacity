@@ -1,71 +1,23 @@
 {
-  "generated_at": "2026-11-23 18:14:06 UTC \u00b7 2026-11-23 23:44:06 IST",
+  "generated_at": "2026-11-23 19:19:46 UTC \u00b7 2026-11-24 00:49:46 IST",
   "duration_meta": {
     "enabled": true,
-    "default_hours": 4.0,
-    "lease_buffer_minutes": 15.0,
-    "duration_basis": "Successful ProwJob wall-clock only (lease acquire through pre/test/post); fail-only Sippy averages are ignored",
-    "fetched_releases": [
-      "4.12",
-      "4.13",
-      "4.14",
-      "4.15",
-      "4.16",
-      "4.17",
-      "4.18",
-      "4.19",
-      "4.20",
-      "4.21",
-      "4.22",
-      "4.23",
-      "5.0",
-      "5.1"
-    ],
-    "errors": [],
     "matched": 95,
-    "success_samples": 37,
-    "workflow_fallback": 21,
-    "default_fallback": 2,
-    "workflow_medians_hours": {
-      "hypershift-mce-ibmz-conformance-hcpmulti-kubevirt|install": 4.5,
-      "hypershift-mce-ibmz-conformance-s390xmgmt-kubevirt-oz|install": 4.25,
-      "kueue-operator-libvirt-s390x|install": 2.12,
-      "openshift-e2e-libvirt-heterogeneous-vpn|install": 3.25,
-      "openshift-e2e-libvirt-upi|install": 3.0,
-      "openshift-e2e-libvirt-vpn|install": 2.25,
-      "openshift-e2e-libvirt-vpn|upgrade": 2.12,
-      "openshift-e2e-libvirt-vpn-fips|install": 3.0
-    },
-    "as_medians_hours": {
-      "e2e-agent-ibmz-sno|install": 1.25,
-      "e2e-external-ibmz-agent-libvirt-z-z|install": 3.25,
-      "e2e-external-ibmz-upi-libvirt-z-z|install": 3.0,
-      "e2e-ibmz-multi-mgmt-ovn-conformance-hcpmulti-z-zx|install": 4.5,
-      "e2e-ibmz-s390x-mgmt-ovn-conformance-virt-z-z|install": 4.25,
-      "ocp-e2e-ovn-agent-remote-libvirt-multi-z-z|install": 3.0,
-      "ocp-e2e-ovn-remote-libvirt-multi-z-z|install": 2.25,
-      "ocp-e2e-ovn-remote-libvirt-multi-z-za|install": 3.25,
-      "ocp-e2e-ovn-remote-libvirt-multi-z-zx|install": 3.25,
-      "ocp-e2e-ovn-remote-libvirt-s390x|install": 2.25,
-      "ocp-e2e-serial-ovn-remote-libvirt-multi-z-z|install": 3.0,
-      "ocp-e2e-serial-ovn-techpreview-remote-libvirt-multi-z-z|install": 3.62,
-      "ocp-fips-ovn-remote-libvirt-multi-z-z|install": 3.0,
-      "ocp-fips-ovn-remote-libvirt-s390x|install": 2.0,
-      "ocp-fips-ovn-techpreview-multi-z-z|install": 3.5,
-      "ocp-fips-ovn-techpreview-remote-libvirt-multi-z-z|install": 3.5,
-      "ocp-image-ecosystem-ovn-remote-libvirt-multi-z-z|install": 1.5,
-      "ocp-ovn-remote-libvirt-s390x|upgrade": 2.12,
-      "test-e2e-4-22-downstream|install": 2.62,
-      "test-e2e-4-22-upstream|install": 1.75
-    }
+    "workflow_fallback": 19,
+    "default_fallback": 5,
+    "min_hours": 0.5,
+    "max_hours": 12.0,
+    "lease_buffer_minutes": 15.0,
+    "default_hours": 4.0,
+    "note": "Regenerated HTML/UI; hold durations reused from prior jobs.csv (Sippy not re-fetched)."
   },
-  "fingerprint": "54dcf073c7f6f19cb986bf1241714198b10df6616cb627e09055a488c9aab6da",
+  "fingerprint": "0d6d4b400b9f5271d0d0e542b45a9a7647bcc7e397bbec961c6ae331a177b113",
   "source": {
-    "sha": "2ad1a173223965f02f9cb435e2c6bcbb3021a0e0",
-    "short_sha": "2ad1a1732239",
-    "subject": "ipi-aws: default AWS_INSTALL_USE_MINIMAL_PERMISSIONS to yes (#89294)",
-    "committed_at": "2026-11-23T17:13:14Z",
-    "source_url": "https://github.com/openshift/release/commit/2ad1a173223965f02f9cb435e2c6bcbb3021a0e0"
+    "sha": "7e0920b31c11a33db6d8a6dfc476d47c3399c4c4",
+    "short_sha": "7e0920b31c11",
+    "subject": "multiarch: pin nightly-4.19 multi-z-zx OZ VPN job to build12",
+    "committed_at": "2026-11-23T19:12:38+05:30",
+    "source_url": "https://github.com/openshift/release/commit/7e0920b31c11a33db6d8a6dfc476d47c3399c4c4"
   },
   "workflows": [
     {
@@ -87,22 +39,22 @@
       "sippy_matched": 17
     },
     {
+      "workflow": "openshift-e2e-libvirt-heterogeneous-vpn",
+      "jobs": 5,
+      "profiles": [
+        "libvirt-s390x-vpn-amd64",
+        "libvirt-s390x-vpn-arm64"
+      ],
+      "median_duration_hours": 3.5,
+      "sippy_matched": 4
+    },
+    {
       "workflow": "kueue-operator-libvirt-s390x",
       "jobs": 4,
       "profiles": [
         "libvirt-s390x-vpn-oz"
       ],
       "median_duration_hours": 2.38,
-      "sippy_matched": 4
-    },
-    {
-      "workflow": "openshift-e2e-libvirt-heterogeneous-vpn",
-      "jobs": 4,
-      "profiles": [
-        "libvirt-s390x-vpn-amd64",
-        "libvirt-s390x-vpn-arm64"
-      ],
-      "median_duration_hours": 3.5,
       "sippy_matched": 4
     },
     {
@@ -176,14 +128,54 @@
       "sippy_coverage": 0.7924528301886793,
       "top_free_blocks": [
         {
-          "day": "Sun",
-          "dow": 0,
-          "start_hour": 0,
-          "end_dow": 0,
-          "end_day": "Sun",
-          "end_hour": 0,
-          "hours": 168,
-          "min_spare": 2
+          "day": "Mon",
+          "dow": 1,
+          "start_hour": 10,
+          "end_dow": 2,
+          "end_day": "Tue",
+          "end_hour": 7,
+          "hours": 21,
+          "min_spare": 5
+        },
+        {
+          "day": "Tue",
+          "dow": 2,
+          "start_hour": 11,
+          "end_dow": 3,
+          "end_day": "Wed",
+          "end_hour": 7,
+          "hours": 20,
+          "min_spare": 5
+        },
+        {
+          "day": "Wed",
+          "dow": 3,
+          "start_hour": 10,
+          "end_dow": 4,
+          "end_day": "Thu",
+          "end_hour": 7,
+          "hours": 21,
+          "min_spare": 5
+        },
+        {
+          "day": "Thu",
+          "dow": 4,
+          "start_hour": 10,
+          "end_dow": 6,
+          "end_day": "Sat",
+          "end_hour": 5,
+          "hours": 43,
+          "min_spare": 5
+        },
+        {
+          "day": "Sat",
+          "dow": 6,
+          "start_hour": 6,
+          "end_dow": 1,
+          "end_day": "Mon",
+          "end_hour": 7,
+          "hours": 49,
+          "min_spare": 5
         }
       ],
       "top_free_slots": [
@@ -438,23 +430,83 @@
         "libvirt-s390x-vpn-amd64-0-1"
       ],
       "capacity": 2,
-      "job_count": 4,
+      "job_count": 5,
       "weekly_job_count": 3,
-      "low_frequency_job_count": 1,
+      "low_frequency_job_count": 2,
       "peak_demand": 1,
       "overcommit_hours": 0,
       "median_duration_hours": 3.5,
-      "sippy_coverage": 1.0,
+      "sippy_coverage": 0.8,
       "top_free_blocks": [
         {
           "day": "Sun",
           "dow": 0,
-          "start_hour": 0,
+          "start_hour": 10,
+          "end_dow": 1,
+          "end_day": "Mon",
+          "end_hour": 0,
+          "hours": 14,
+          "min_spare": 2
+        },
+        {
+          "day": "Mon",
+          "dow": 1,
+          "start_hour": 10,
+          "end_dow": 2,
+          "end_day": "Tue",
+          "end_hour": 0,
+          "hours": 14,
+          "min_spare": 2
+        },
+        {
+          "day": "Tue",
+          "dow": 2,
+          "start_hour": 10,
+          "end_dow": 3,
+          "end_day": "Wed",
+          "end_hour": 5,
+          "hours": 19,
+          "min_spare": 2
+        },
+        {
+          "day": "Wed",
+          "dow": 3,
+          "start_hour": 10,
+          "end_dow": 4,
+          "end_day": "Thu",
+          "end_hour": 0,
+          "hours": 14,
+          "min_spare": 2
+        },
+        {
+          "day": "Thu",
+          "dow": 4,
+          "start_hour": 10,
+          "end_dow": 5,
+          "end_day": "Fri",
+          "end_hour": 0,
+          "hours": 14,
+          "min_spare": 2
+        },
+        {
+          "day": "Fri",
+          "dow": 5,
+          "start_hour": 10,
+          "end_dow": 6,
+          "end_day": "Sat",
+          "end_hour": 5,
+          "hours": 19,
+          "min_spare": 2
+        },
+        {
+          "day": "Sat",
+          "dow": 6,
+          "start_hour": 10,
           "end_dow": 0,
           "end_day": "Sun",
-          "end_hour": 0,
-          "hours": 168,
-          "min_spare": 1
+          "end_hour": 5,
+          "hours": 19,
+          "min_spare": 2
         }
       ],
       "top_free_slots": [
@@ -717,16 +769,6 @@
       "sippy_coverage": 1.0,
       "top_free_blocks": [
         {
-          "day": "Thu",
-          "dow": 4,
-          "start_hour": 10,
-          "end_dow": 2,
-          "end_day": "Tue",
-          "end_hour": 5,
-          "hours": 115,
-          "min_spare": 1
-        },
-        {
           "day": "Tue",
           "dow": 2,
           "start_hour": 10,
@@ -734,6 +776,16 @@
           "end_day": "Thu",
           "end_hour": 5,
           "hours": 43,
+          "min_spare": 1
+        },
+        {
+          "day": "Thu",
+          "dow": 4,
+          "start_hour": 10,
+          "end_dow": 2,
+          "end_day": "Tue",
+          "end_hour": 5,
+          "hours": 115,
           "min_spare": 1
         }
       ],

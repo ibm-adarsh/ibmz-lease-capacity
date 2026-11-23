@@ -63,16 +63,28 @@ Regression checks (cron math, OCP labeling, lease counts, docs consistency):
 
 ```bash
 python3 scripts/regression_check.py --release-repo /path/to/openshift/release --docs-dir docs
+node scripts/smoke_scheduler.mjs   # duration-aware + maintenance helpers, all profiles UTC/IST
 ```
 
 ## Model notes
 
 This is a **configured schedule planning model**, not live Boskos occupancy.
+Heatmap values are **predictions from cron × modeled hold**, not live pool state.
 
-- Each periodic acquires **1 lease at job start** and keeps it for the modeled
+- Each periodic acquires **1 lease at job start** (more if the workflow holds
+  extra leases of the **same** Boskos type) and keeps them for the modeled
   **full job wall-clock** (pre → test → post), not the test phase alone
+- Hold intervals are half-open `[start, end)`: a job ending at `12:00` does not
+  occupy the `12:00–13:00` hour bin
+- Each heatmap cell is **occupancy-if-any-overlap** for that hour bin: every job
+  whose hold intersects `[H:00, H+1:00)` adds its `leases_held`. That is
+  conservative vs true minute-level peak (non-overlapping jobs in the same hour
+  still add). Demand is **not** clamped to capacity — overcommit is shown
 - Example: profile capacity `10`, one job with a `3h` lease hold ⇒ for those 3 hours
   only `9` leases remain available
+- **Best free windows** require ≥50% of leases free throughout; end times are
+  **exclusive**. Duration-aware start finder and maintenance cards are planning
+  recommendations only (never enforced / “reserved”)
 - Duration preference order:
   1. Sippy **successful** ProwJob timing (success-run median when pass rate is mixed; same OCP version, else nearest version with passes; never install↔upgrade mix). Fail-only averages are ignored.
   2. Median of the same job name / job family / workflow (from success-backed samples)

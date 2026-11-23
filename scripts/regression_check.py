@@ -26,10 +26,13 @@ from generate_report import (  # noqa: E402
     build_workflow_lease_index,
     classify_and_expand_cron,
     construct_prow_job_name,
+    contiguous_free_blocks,
     cron_to_english,
     discover_profiles,
     expand_interval,
     extract_ocp_version,
+    find_maintenance_candidates,
+    find_start_slots,
     parse_boskos_leases,
     parse_dow_field,
     parse_field,
@@ -37,7 +40,9 @@ from generate_report import (  # noqa: E402
     parse_profile_lease_map,
     parse_timeout_hours,
     planning_minutes_from_sippy,
+    scheduling_min_spare,
     sippy_has_successful_runs,
+    window_feasible,
 )
 
 
@@ -229,6 +234,22 @@ def check_ist_docs_helpers(c: Checker, docs_dir: Path) -> None:
         "utcPartsToIst(d, hh, mm).dow" in text or "utcPartsToIst(d, hh, mm)" in text,
         "docs should convert each weekday with the UTC clock when remapping IST English",
     )
+    c.check(
+        "findStartSlots" in text and "findMaintenanceCandidates" in text,
+        "docs should include duration-aware planner and maintenance helpers",
+    )
+    c.check(
+        'id="plan-slots"' in text and 'id="maint-slots"' in text,
+        "docs should render Fit a new job + Recommended maintenance cards",
+    )
+    c.check(
+        "exclusive" in text and "occupancy-if-any-overlap" in text,
+        "docs should document exclusive ends and occupancy-if-any-overlap semantics",
+    )
+    c.check(
+        "badge.overcommit" in text or "overcommit" in text,
+        "docs should surface overcommit in free/busy badges",
+    )
 
 
 def check_sippy_success_duration_gate(c: Checker) -> None:
@@ -290,6 +311,12 @@ def check_concurrency_math(c: Checker) -> None:
     c.check(demand[0][0] == 2, f"leases_held=2 should paint demand 2, got {demand[0][0]}")
     c.check(demand[0][1] == 2, f"1.5h hold should cover hour 1, got {demand[0][1]}")
     c.check(demand[0][2] == 0, f"hold must not paint hour 2, got {demand[0][2]}")
+    # Exact 1h hold ending on hour boundary: half-open [00:00, 01:00) paints only hour 0.
+    exact = dict(job)
+    exact["duration_hours"] = 1.0
+    exact["leases_held"] = 1
+    demand_exact, _ = build_concurrency([exact], 5.0)
+    c.check(demand_exact[0][0] == 1 and demand_exact[0][1] == 0, "1h hold from :00 must not paint next hour")
     # week wrap
     wrap = dict(job)
     wrap["slots"] = [(6, 23, 30)]
@@ -298,6 +325,56 @@ def check_concurrency_math(c: Checker) -> None:
     demand2, _ = build_concurrency([wrap], 5.0)
     c.check(demand2[6][23] == 1 and demand2[0][0] == 1, "week-wrap Saturday 23:30 + 1.5h")
     c.check(demand2[0][1] == 0, "wrap must not paint Sunday 01")
+
+
+def check_scheduling_helpers(c: Checker) -> None:
+    c.check(scheduling_min_spare(10) == 5, f"50% of 10 → 5 free, got {scheduling_min_spare(10)}")
+    c.check(scheduling_min_spare(9) == 5, f"ceil(4.5)=5 for capacity 9, got {scheduling_min_spare(9)}")
+    # Zero occupancy week: any start works for 4h / 3 leases with 50% free on cap 10
+    # limit = 10 - 5 = 5; existing 0 + 3 <= 5.
+    empty = [[0] * 24 for _ in range(7)]
+    slots = find_start_slots(empty, 10, duration_hours=4, leases_needed=3, min_free_pct=50)
+    c.check(len(slots) == 7 * 24, f"empty grid should allow all starts, got {len(slots)}")
+    # Busy hour blocks: paint Mon 10–13 as demand 4; 3-lease 4h job with 50% free needs existing<=2.
+    busy = [[0] * 24 for _ in range(7)]
+    for h in range(10, 14):
+        busy[1][h] = 4
+    c.check(
+        not window_feasible(busy, 10, 1 * 24 + 9, 4, 3, 50),
+        "start Mon 09 with demand 4 in window should fail (4+3>5)",
+    )
+    c.check(
+        window_feasible(busy, 10, 1 * 24 + 14, 4, 3, 50),
+        "start Mon 14 after busy block should pass on empty hours",
+    )
+    # Free windows: capacity 10, demand 5 everywhere Mon–Fri daytime only.
+    demand = [[0] * 24 for _ in range(7)]
+    for d in range(7):
+        for h in range(8, 18):
+            demand[d][h] = 6  # spare 4 < 5 → breaks ≥50% free
+    blocks = contiguous_free_blocks(demand, 10)
+    c.check(blocks, "expected quiet overnight free windows")
+    for b in blocks:
+        c.check(b["min_spare"] >= 5, f"free window min_spare {b['min_spare']} < 5")
+        c.check(b["hours"] < 168 or b["min_spare"] >= 5, "full-week only if ≥50% free")
+    # Maintenance: empty week → Recommended Mon 00 for 2h
+    maint = find_maintenance_candidates(empty, 10, details=None, duration_hours=2, min_free_pct=50)
+    c.check(maint and maint[0]["status"] == "Recommended", "empty week should recommend maintenance")
+    c.check(maint[0]["dow"] in (1, 2, 3, 4, 5), "maintenance must be Mon–Fri")
+    # Conflict when details list a job in the window
+    details = [[[] for _ in range(24)] for _ in range(7)]
+    details[1][9].append(
+        {"as": "conflict-job", "start": "Mon 09:00", "ocp_version": "4.19", "leases_held": 1, "workflow": "w"}
+    )
+    maint2 = find_maintenance_candidates(
+        empty, 10, details=details, duration_hours=2, min_free_pct=50, limit=200
+    )
+    hit = [m for m in maint2 if m["dow"] == 1 and m["start_hour"] == 9]
+    c.check(hit and hit[0]["status"] == "Conflict", "overlapping job must mark Conflict")
+    c.check(
+        all(m["status"] == "Recommended" for m in maint2[:4]),
+        "top ranked maintenance slots should prefer Conflict-free windows",
+    )
 
 
 def check_release_repo(c: Checker, release_repo: Path) -> list[dict]:
@@ -480,6 +557,7 @@ def main() -> int:
     check_ist_heatmap_mapping(c)
     check_sippy_success_duration_gate(c)
     check_concurrency_math(c)
+    check_scheduling_helpers(c)
 
     print("== release repo ==")
     jobs = check_release_repo(c, args.release_repo.resolve())
