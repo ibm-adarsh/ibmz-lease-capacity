@@ -1471,19 +1471,24 @@ def contiguous_free_blocks(
             if v not in targets:
                 targets.append(v)
 
-    # Keep a full-week block only when the week is mostly idle (≥70% free),
-    # otherwise fall through to a higher spare bar for real quiet stretches.
-    mostly_idle = max(preferred, (capacity * 7 + 9) // 10)  # ceil(capacity * 0.7)
+    # Prefer real quiet sub-stretches. If the whole week already meets the
+    # ≥50% free bar, keep that as a fallback after trying stricter bars.
+    full_week_fallback: list[dict[str, Any]] = []
     for threshold in targets:
         blocks = _contiguous_blocks_at_spare(spare, threshold, min_hours)
         useful = [
             b
             for b in blocks
-            if b["hours"] < n or b["min_spare"] >= mostly_idle
+            if b["hours"] < n or b["min_spare"] >= preferred
         ]
-        if useful:
-            return useful
-    return []
+        if not useful:
+            continue
+        only_full_week = len(useful) == 1 and useful[0]["hours"] >= n
+        if only_full_week and threshold <= preferred:
+            full_week_fallback = useful
+            continue
+        return useful
+    return full_week_fallback
 
 
 def workflow_summary(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -3080,20 +3085,26 @@ function bestDisplayFreeBlocks(grid, capacity) {{
     if (!targets.includes(v)) targets.push(v);
   }}
   const weekHours = 7 * 24;
-  // Keep a full-week block only when mostly idle (≥70% free).
-  const mostlyIdle = Math.max(preferred, Math.ceil(capacity * 0.7));
+  // Prefer quieter sub-stretches; keep a full-week ≥50%-free result as fallback.
+  let fullWeekFallback = [];
   for (const minSpare of targets) {{
     const blocks = contiguousDisplayBlocks(grid, capacity, minSpare, 3)
-      .filter(b => b.hours < weekHours || b.min_spare >= mostlyIdle);
-    if (blocks.length) {{
-      // Keep calendar order Sunday → Saturday in the table.
-      return blocks
-        .slice()
-        .sort((a, b) => a.dow - b.dow || a.start_hour - b.start_hour || b.hours - a.hours || b.min_spare - a.min_spare)
-        .slice(0, 16);
+      .filter(b => b.hours < weekHours || b.min_spare >= preferred);
+    if (!blocks.length) continue;
+    const onlyFullWeek = blocks.length === 1 && blocks[0].hours >= weekHours;
+    if (onlyFullWeek && minSpare <= preferred) {{
+      fullWeekFallback = blocks;
+      continue;
     }}
+    return blocks
+      .slice()
+      .sort((a, b) => a.dow - b.dow || a.start_hour - b.start_hour || b.hours - a.hours || b.min_spare - a.min_spare)
+      .slice(0, 16);
   }}
-  return [];
+  return fullWeekFallback
+    .slice()
+    .sort((a, b) => a.dow - b.dow || a.start_hour - b.start_hour || b.hours - a.hours || b.min_spare - a.min_spare)
+    .slice(0, 16);
 }}
 
 function renderSlots(p) {{
