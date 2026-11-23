@@ -217,7 +217,11 @@ def check_ist_docs_helpers(c: Checker, docs_dir: Path) -> None:
     )
     c.check(
         "bestDisplayFreeBlocks" in text and "schedulingMinSpare" in text,
-        "docs should prefer high-spare free windows over trivial full-week blocks",
+        "docs should prefer ≥40%-free windows over trivial full-week blocks",
+    )
+    c.check(
+        "Math.ceil(capacity * 0.4)" in text or "capacity * 0.4" in text,
+        "docs schedulingMinSpare must use a ≥40% free threshold",
     )
     # Behavioral: Monday–Thursday 22:00 UTC must become Tuesday–Friday under IST.
     # (Lightweight presence of the midnight-crossing rewriter path.)

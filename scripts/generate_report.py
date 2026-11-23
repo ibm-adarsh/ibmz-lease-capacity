@@ -1379,10 +1379,10 @@ def rank_slots(
 
 
 def scheduling_min_spare(capacity: int) -> int:
-    """Spare leases that make a window useful for adding work (≈ half capacity)."""
-    if capacity <= 1:
+    """Minimum free leases for a "best free window" (≥40% of capacity)."""
+    if capacity <= 0:
         return 1
-    return max(2, (capacity + 1) // 2)
+    return max(1, (capacity * 2 + 4) // 5)  # ceil(capacity * 0.4)
 
 
 def _contiguous_blocks_at_spare(
@@ -1446,9 +1446,9 @@ def contiguous_free_blocks(
 ) -> list[dict[str, Any]]:
     """Find quiet contiguous windows for scheduling advice (may wrap midnight/week).
 
-    Prefers stretches with ~half the leases still free so a full-week
-    "always ≥2 free" result is not treated as the best place to add jobs when
-    the profile regularly runs near capacity.
+    Prefers stretches with ≥40% of leases still free so a full-week
+    "always a couple free" result is not treated as the best place to add jobs
+    when the profile regularly runs near capacity.
     """
     n = 7 * 24
     spare = [capacity - demand[d][h] for d in range(7) for h in range(24)]
@@ -1457,7 +1457,7 @@ def contiguous_free_blocks(
         targets = [max(1, min(capacity, min_spare))]
     else:
         targets = []
-        for t in (preferred, max(1, (capacity * 2 + 4) // 5), max(1, (capacity + 2) // 3), 2, 1):
+        for t in (preferred, max(1, (capacity + 2) // 3), 2, 1):
             v = max(1, min(capacity, t))
             if v not in targets:
                 targets.append(v)
@@ -2398,7 +2398,7 @@ table.jobs tbody tr:hover, table.wf tbody tr:hover {{ background: var(--accent-s
       <div class="slot-block-head">
         <p class="eyebrow">Scheduling</p>
         <h2>Best free windows</h2>
-        <p class="panel-lead">Quiet multi-hour stretches with ample spare capacity — safest places to add jobs.</p>
+        <p class="panel-lead">Quiet multi-hour stretches with ≥40% of leases free — safest places to add jobs.</p>
       </div>
       <div class="slot-scroll">
         <ul class="slots" id="free-blocks"></ul>
@@ -3011,8 +3011,9 @@ function rankDisplaySlots(grid, capacity) {{
 }}
 
 function schedulingMinSpare(capacity) {{
-  if (capacity <= 1) return 1;
-  return Math.max(2, Math.ceil(capacity / 2));
+  // ≥40% of leases free.
+  if (capacity <= 0) return 1;
+  return Math.max(1, Math.ceil(capacity * 0.4));
 }}
 
 function contiguousDisplayBlocks(grid, capacity, minSpare = 1, minHours = 3) {{
@@ -3057,11 +3058,11 @@ function contiguousDisplayBlocks(grid, capacity, minSpare = 1, minHours = 3) {{
 }}
 
 function bestDisplayFreeBlocks(grid, capacity) {{
-  // Prefer quiet stretches (~half capacity free). Skip a trivial full-week
-  // "always ≥2 free" result when the profile regularly runs near capacity.
+  // Prefer quiet stretches (≥40% capacity free). Skip a trivial full-week
+  // "always a couple free" result when the profile regularly runs near capacity.
   const preferred = schedulingMinSpare(capacity);
   const targets = [];
-  for (const t of [preferred, Math.ceil(capacity * 0.4), Math.ceil(capacity * 0.3), 2, 1]) {{
+  for (const t of [preferred, Math.ceil(capacity / 3), 2, 1]) {{
     const v = Math.max(1, Math.min(capacity, t));
     if (!targets.includes(v)) targets.push(v);
   }}
