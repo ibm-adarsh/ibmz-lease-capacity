@@ -36,6 +36,8 @@ from generate_report import (  # noqa: E402
     parse_jobs,
     parse_profile_lease_map,
     parse_timeout_hours,
+    planning_minutes_from_sippy,
+    sippy_has_successful_runs,
 )
 
 
@@ -112,13 +114,18 @@ def check_ist_heatmap_mapping(c: Checker) -> None:
     d, h, m = utc_to_ist(1, 0, 0)
     c.check((d, h, m) == (1, 5, 30), f"UTC Mon 00:00 → IST Mon 05:30, got {d} {h}:{m}")
 
-    # IST Monday 06:00 → UTC Monday 00:30 → UTC hour bucket 0
-    d, h, m = ist_to_utc(1, 6, 0)
-    c.check((d, h) == (1, 0), f"IST Mon 06:00 maps to UTC Mon 00, got {d} {h}")
+    # Heatmap IST column h means h:30 IST (== UTC hour start)
+    # IST Monday 05:30 → UTC Monday 00:00
+    d, h, m = ist_to_utc(1, 5, 30)
+    c.check((d, h, m) == (1, 0, 0), f"IST Mon 05:30 maps to UTC Mon 00:00, got {d} {h}:{m}")
 
-    # IST Monday 05:00 → UTC Sunday 23:30 → UTC hour bucket 23 Sunday
-    d, h, m = ist_to_utc(1, 5, 0)
-    c.check((d, h) == (0, 23), f"IST Mon 05:00 maps to UTC Sun 23, got {d} {h}")
+    # IST Monday 06:30 → UTC Monday 01:00
+    d, h, m = ist_to_utc(1, 6, 30)
+    c.check((d, h, m) == (1, 1, 0), f"IST Mon 06:30 maps to UTC Mon 01:00, got {d} {h}:{m}")
+
+    # Free-window label for UTC Mon 00 must match heatmap column Mon 05:30
+    id_, ih, im = utc_to_ist(1, 0, 0)
+    c.check((id_, ih, im) == (1, 5, 30), f"formatSlot UTC Mon 00 → IST Mon 05:30, got {id_} {ih}:{im}")
 
     # Round-trip every display IST hour back through UTC ownership
     for dow in range(7):
@@ -161,6 +168,54 @@ def check_ist_docs_helpers(c: Checker, docs_dir: Path) -> None:
         "Columns stay UTC even when" not in text,
         "docs still claims heatmap columns stay UTC under IST",
     )
+    c.check(
+        "${longDays[ist.dow]}}${mid}" not in text,
+        "docs formatCronEnglish has stray } after weekday",
+    )
+    c.check(
+        "istPartsToUtc(d, h, 30)" in text or "istPartsToUtc(d, h, 30)" in text.replace(" ", ""),
+        "docs heatmap must map IST columns at :30 for 1:1 UTC buckets",
+    )
+
+
+def check_sippy_success_duration_gate(c: Checker) -> None:
+    """Fail-only Sippy averages must not drive lease-hold planning."""
+    fail_only = {
+        "current_average_duration_minutes": 65,
+        "previous_average_duration_minutes": 0,
+        "current_runs": 4,
+        "previous_runs": 0,
+        "current_passes": 0,
+        "previous_passes": 0,
+        "current_pass_percentage": 0,
+        "previous_pass_percentage": 0,
+    }
+    c.check(not sippy_has_successful_runs(fail_only), "0-pass entry should not count as success history")
+    c.check(
+        planning_minutes_from_sippy(fail_only) is None,
+        "fail-only Sippy average must be rejected (expect default hours)",
+    )
+
+    healthy = {
+        "current_average_duration_minutes": 180,
+        "previous_average_duration_minutes": 170,
+        "current_runs": 10,
+        "previous_runs": 8,
+        "current_passes": 10,
+        "previous_passes": 8,
+        "current_pass_percentage": 100,
+        "previous_pass_percentage": 100,
+    }
+    mins = planning_minutes_from_sippy(healthy)
+    c.check(mins == 180, f"healthy pass window should use current avg, got {mins}")
+
+    mixed = dict(healthy)
+    mixed["current_pass_percentage"] = 40
+    mixed["current_passes"] = 2
+    mixed["current_average_duration_minutes"] = 70  # polluted by fails
+    mixed["success_median_duration_minutes"] = 300  # ~5h successful runs
+    mins = planning_minutes_from_sippy(mixed)
+    c.check(mins == 300, f"success median must win over fail-polluted avg, got {mins}")
 
 
 def check_concurrency_math(c: Checker) -> None:
@@ -370,6 +425,7 @@ def main() -> int:
     check_cron_helpers(c)
     check_ocp_version(c)
     check_ist_heatmap_mapping(c)
+    check_sippy_success_duration_gate(c)
     check_concurrency_math(c)
 
     print("== release repo ==")
