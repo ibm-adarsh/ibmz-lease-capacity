@@ -1437,7 +1437,10 @@ def _contiguous_blocks_at_spare(
                 "min_spare": min_sp,
             }
         )
-    blocks.sort(key=lambda b: (-b["min_spare"], -b["hours"], b["dow"], b["start_hour"]))
+    # Sunday → Saturday by window start (then longer / more-spare as tiebreakers).
+    blocks.sort(
+        key=lambda b: (b["dow"], b["start_hour"], -b["hours"], -b["min_spare"])
+    )
     return blocks
 
 
@@ -1462,12 +1465,15 @@ def contiguous_free_blocks(
             if v not in targets:
                 targets.append(v)
 
+    # Keep a full-week block only when the week is mostly idle (≥70% free),
+    # otherwise fall through to a higher spare bar for real quiet stretches.
+    mostly_idle = max(preferred, (capacity * 7 + 9) // 10)  # ceil(capacity * 0.7)
     for threshold in targets:
         blocks = _contiguous_blocks_at_spare(spare, threshold, min_hours)
         useful = [
             b
             for b in blocks
-            if b["hours"] < n or b["min_spare"] >= preferred
+            if b["hours"] < n or b["min_spare"] >= mostly_idle
         ]
         if useful:
             return useful
@@ -3053,7 +3059,8 @@ function contiguousDisplayBlocks(grid, capacity, minSpare = 1, minHours = 3) {{
       min_spare: minSp,
     }});
   }}
-  blocks.sort((a, b) => b.min_spare - a.min_spare || b.hours - a.hours || a.dow - b.dow || a.start_hour - b.start_hour);
+  // Sunday → Saturday by window start (then longer / more-spare as tiebreakers).
+  blocks.sort((a, b) => a.dow - b.dow || a.start_hour - b.start_hour || b.hours - a.hours || b.min_spare - a.min_spare);
   return blocks;
 }}
 
@@ -3067,10 +3074,18 @@ function bestDisplayFreeBlocks(grid, capacity) {{
     if (!targets.includes(v)) targets.push(v);
   }}
   const weekHours = 7 * 24;
+  // Keep a full-week block only when mostly idle (≥70% free).
+  const mostlyIdle = Math.max(preferred, Math.ceil(capacity * 0.7));
   for (const minSpare of targets) {{
     const blocks = contiguousDisplayBlocks(grid, capacity, minSpare, 3)
-      .filter(b => b.hours < weekHours || b.min_spare >= preferred);
-    if (blocks.length) return blocks.slice(0, 16);
+      .filter(b => b.hours < weekHours || b.min_spare >= mostlyIdle);
+    if (blocks.length) {{
+      // Keep calendar order Sunday → Saturday in the table.
+      return blocks
+        .slice()
+        .sort((a, b) => a.dow - b.dow || a.start_hour - b.start_hour || b.hours - a.hours || b.min_spare - a.min_spare)
+        .slice(0, 16);
+    }}
   }}
   return [];
 }}
