@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-23 17:48:45 UTC \u00b7 2026-11-23 23:18:45 IST",
+  "generated_at": "2026-11-23 17:52:16 UTC \u00b7 2026-11-23 23:22:16 IST",
   "duration_meta": {
     "enabled": true,
     "default_hours": 4.0,
@@ -22,7 +22,7 @@
       "5.1"
     ],
     "errors": [],
-    "matched": 94,
+    "matched": 95,
     "success_samples": 37,
     "workflow_fallback": 21,
     "default_fallback": 2,
@@ -59,13 +59,13 @@
       "test-e2e-4-22-upstream|install": 1.75
     }
   },
-  "fingerprint": "52c2e6b273ae0e97f672b66221521222aa625a466e3cc22a4dd4e56f04483551",
+  "fingerprint": "54dcf073c7f6f19cb986bf1241714198b10df6616cb627e09055a488c9aab6da",
   "source": {
-    "sha": "9169ac12ffab265a8a1cdfcdbe77ee76d8991cb8",
-    "short_sha": "9169ac12ffab",
-    "subject": "sandboxed-containers-operator: test 1.14 release FBC on nightly jobs (#88920)",
-    "committed_at": "2026-11-17T15:18:28Z",
-    "source_url": "https://github.com/openshift/release/commit/9169ac12ffab265a8a1cdfcdbe77ee76d8991cb8"
+    "sha": "2ad1a173223965f02f9cb435e2c6bcbb3021a0e0",
+    "short_sha": "2ad1a1732239",
+    "subject": "ipi-aws: default AWS_INSTALL_USE_MINIMAL_PERMISSIONS to yes (#89294)",
+    "committed_at": "2026-11-23T17:13:14Z",
+    "source_url": "https://github.com/openshift/release/commit/2ad1a173223965f02f9cb435e2c6bcbb3021a0e0"
   },
   "workflows": [
     {
@@ -97,13 +97,13 @@
     },
     {
       "workflow": "openshift-e2e-libvirt-heterogeneous-vpn",
-      "jobs": 3,
+      "jobs": 4,
       "profiles": [
         "libvirt-s390x-vpn-amd64",
         "libvirt-s390x-vpn-arm64"
       ],
       "median_duration_hours": 3.5,
-      "sippy_matched": 3
+      "sippy_matched": 4
     },
     {
       "workflow": "hypershift-mce-ibmz-conformance-s390xmgmt-kubevirt-oz",
@@ -484,10 +484,10 @@
         "libvirt-s390x-vpn-amd64-0-1"
       ],
       "capacity": 2,
-      "job_count": 3,
+      "job_count": 4,
       "weekly_job_count": 3,
-      "low_frequency_job_count": 0,
-      "peak_demand": 2,
+      "low_frequency_job_count": 1,
+      "peak_demand": 1,
       "overcommit_hours": 0,
       "median_duration_hours": 3.5,
       "sippy_coverage": 1.0,
@@ -495,6 +495,22 @@
         {
           "day": "Sun",
           "dow": 0,
+          "start_hour": 0,
+          "end_hour": 24,
+          "hours": 24,
+          "min_spare": 1
+        },
+        {
+          "day": "Mon",
+          "dow": 1,
+          "start_hour": 0,
+          "end_hour": 24,
+          "hours": 24,
+          "min_spare": 1
+        },
+        {
+          "day": "Tue",
+          "dow": 2,
           "start_hour": 0,
           "end_hour": 24,
           "hours": 24,
@@ -509,43 +525,27 @@
           "min_spare": 1
         },
         {
-          "day": "Sat",
-          "dow": 6,
+          "day": "Thu",
+          "dow": 4,
           "start_hour": 0,
           "end_hour": 24,
           "hours": 24,
           "min_spare": 1
         },
         {
-          "day": "Mon",
-          "dow": 1,
-          "start_hour": 5,
-          "end_hour": 24,
-          "hours": 19,
-          "min_spare": 1
-        },
-        {
-          "day": "Tue",
-          "dow": 2,
-          "start_hour": 5,
-          "end_hour": 24,
-          "hours": 19,
-          "min_spare": 1
-        },
-        {
-          "day": "Thu",
-          "dow": 4,
-          "start_hour": 5,
-          "end_hour": 24,
-          "hours": 19,
-          "min_spare": 1
-        },
-        {
           "day": "Fri",
           "dow": 5,
-          "start_hour": 5,
+          "start_hour": 0,
           "end_hour": 24,
-          "hours": 19,
+          "hours": 24,
+          "min_spare": 1
+        },
+        {
+          "day": "Sat",
+          "dow": 6,
+          "start_hour": 0,
+          "end_hour": 24,
+          "hours": 24,
           "min_spare": 1
         }
       ],
@@ -553,7 +553,7 @@
         {
           "day": "Sun",
           "dow": 0,
-          "hour": 6,
+          "hour": 0,
           "demand": 0,
           "capacity": 2,
           "spare": 2
@@ -561,7 +561,7 @@
         {
           "day": "Sun",
           "dow": 0,
-          "hour": 7,
+          "hour": 1,
           "demand": 0,
           "capacity": 2,
           "spare": 2
@@ -569,7 +569,7 @@
         {
           "day": "Sun",
           "dow": 0,
-          "hour": 8,
+          "hour": 2,
           "demand": 0,
           "capacity": 2,
           "spare": 2
@@ -577,7 +577,15 @@
         {
           "day": "Sun",
           "dow": 0,
-          "hour": 9,
+          "hour": 3,
+          "demand": 0,
+          "capacity": 2,
+          "spare": 2
+        },
+        {
+          "day": "Sun",
+          "dow": 0,
+          "hour": 4,
           "demand": 0,
           "capacity": 2,
           "spare": 2
@@ -661,136 +669,128 @@
           "demand": 0,
           "capacity": 2,
           "spare": 2
-        },
-        {
-          "day": "Sun",
-          "dow": 0,
-          "hour": 20,
-          "demand": 0,
-          "capacity": 2,
-          "spare": 2
         }
       ],
       "top_busy_slots": [
         {
+          "day": "Sun",
+          "dow": 0,
+          "hour": 5,
+          "demand": 1,
+          "capacity": 2,
+          "spare": 1
+        },
+        {
+          "day": "Sun",
+          "dow": 0,
+          "hour": 6,
+          "demand": 1,
+          "capacity": 2,
+          "spare": 1
+        },
+        {
+          "day": "Sun",
+          "dow": 0,
+          "hour": 7,
+          "demand": 1,
+          "capacity": 2,
+          "spare": 1
+        },
+        {
+          "day": "Sun",
+          "dow": 0,
+          "hour": 8,
+          "demand": 1,
+          "capacity": 2,
+          "spare": 1
+        },
+        {
+          "day": "Sun",
+          "dow": 0,
+          "hour": 9,
+          "demand": 1,
+          "capacity": 2,
+          "spare": 1
+        },
+        {
           "day": "Mon",
           "dow": 1,
           "hour": 0,
-          "demand": 2,
+          "demand": 1,
           "capacity": 2,
-          "spare": 0
+          "spare": 1
         },
         {
           "day": "Mon",
           "dow": 1,
           "hour": 1,
-          "demand": 2,
+          "demand": 1,
           "capacity": 2,
-          "spare": 0
+          "spare": 1
         },
         {
           "day": "Mon",
           "dow": 1,
           "hour": 2,
-          "demand": 2,
+          "demand": 1,
           "capacity": 2,
-          "spare": 0
+          "spare": 1
         },
         {
           "day": "Mon",
           "dow": 1,
           "hour": 3,
-          "demand": 2,
+          "demand": 1,
           "capacity": 2,
-          "spare": 0
+          "spare": 1
         },
         {
           "day": "Mon",
           "dow": 1,
           "hour": 4,
-          "demand": 2,
+          "demand": 1,
           "capacity": 2,
-          "spare": 0
+          "spare": 1
         },
         {
-          "day": "Tue",
-          "dow": 2,
-          "hour": 0,
-          "demand": 2,
+          "day": "Mon",
+          "dow": 1,
+          "hour": 5,
+          "demand": 1,
           "capacity": 2,
-          "spare": 0
+          "spare": 1
         },
         {
-          "day": "Tue",
-          "dow": 2,
-          "hour": 1,
-          "demand": 2,
+          "day": "Mon",
+          "dow": 1,
+          "hour": 6,
+          "demand": 1,
           "capacity": 2,
-          "spare": 0
+          "spare": 1
         },
         {
-          "day": "Tue",
-          "dow": 2,
-          "hour": 2,
-          "demand": 2,
+          "day": "Mon",
+          "dow": 1,
+          "hour": 7,
+          "demand": 1,
           "capacity": 2,
-          "spare": 0
+          "spare": 1
         },
         {
-          "day": "Tue",
-          "dow": 2,
-          "hour": 3,
-          "demand": 2,
+          "day": "Mon",
+          "dow": 1,
+          "hour": 8,
+          "demand": 1,
           "capacity": 2,
-          "spare": 0
+          "spare": 1
         },
         {
-          "day": "Tue",
-          "dow": 2,
-          "hour": 4,
-          "demand": 2,
+          "day": "Mon",
+          "dow": 1,
+          "hour": 9,
+          "demand": 1,
           "capacity": 2,
-          "spare": 0
-        },
-        {
-          "day": "Thu",
-          "dow": 4,
-          "hour": 0,
-          "demand": 2,
-          "capacity": 2,
-          "spare": 0
-        },
-        {
-          "day": "Thu",
-          "dow": 4,
-          "hour": 1,
-          "demand": 2,
-          "capacity": 2,
-          "spare": 0
-        },
-        {
-          "day": "Thu",
-          "dow": 4,
-          "hour": 2,
-          "demand": 2,
-          "capacity": 2,
-          "spare": 0
-        },
-        {
-          "day": "Thu",
-          "dow": 4,
-          "hour": 3,
-          "demand": 2,
-          "capacity": 2,
-          "spare": 0
-        },
-        {
-          "day": "Thu",
-          "dow": 4,
-          "hour": 4,
-          "demand": 2,
-          "capacity": 2,
-          "spare": 0
+          "spare": 1
         }
       ]
     },
