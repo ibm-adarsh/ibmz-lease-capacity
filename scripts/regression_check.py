@@ -95,7 +95,7 @@ def check_ocp_version(c: Checker) -> None:
 
 
 def check_ist_heatmap_mapping(c: Checker) -> None:
-    """Heatmap IST columns must remap to the UTC hour that owns IST hour:00."""
+    """IST column H is wall-clock [H:00, H+1:00); starts in H:05–59 belong in H."""
     ist_offset = 5 * 60 + 30
     week = 7 * 24 * 60
 
@@ -110,43 +110,46 @@ def check_ist_heatmap_mapping(c: Checker) -> None:
         total = wrap(dow * 24 * 60 + hour * 60 + minute - ist_offset)
         return total // (24 * 60), (total % (24 * 60)) // 60, total % 60
 
+    def utc_hours_for_ist_hour(dow: int, hour: int) -> list[tuple[int, int]]:
+        seen: set[tuple[int, int]] = set()
+        out: list[tuple[int, int]] = []
+        for minute in (0, 30):
+            ud, uh, _ = ist_to_utc(dow, hour, minute)
+            key = (ud, uh)
+            if key not in seen:
+                seen.add(key)
+                out.append(key)
+        return out
+
     # UTC Monday 00:00 → IST Monday 05:30
     d, h, m = utc_to_ist(1, 0, 0)
     c.check((d, h, m) == (1, 5, 30), f"UTC Mon 00:00 → IST Mon 05:30, got {d} {h}:{m}")
 
-    # Heatmap IST column h means h:30 IST (== UTC hour start)
-    # IST Monday 05:30 → UTC Monday 00:00
-    d, h, m = ist_to_utc(1, 5, 30)
-    c.check((d, h, m) == (1, 0, 0), f"IST Mon 05:30 maps to UTC Mon 00:00, got {d} {h}:{m}")
+    # IST hour 10 overlaps UTC 04:30 and 05:00 → UTC hours 4 and 5
+    overlap = utc_hours_for_ist_hour(2, 10)  # Tue
+    c.check(
+        overlap == [(2, 4), (2, 5)],
+        f"IST Tue 10:00–11:00 should overlap UTC hours 4+5, got {overlap}",
+    )
 
-    # IST Monday 06:30 → UTC Monday 01:00
-    d, h, m = ist_to_utc(1, 6, 30)
-    c.check((d, h, m) == (1, 1, 0), f"IST Mon 06:30 maps to UTC Mon 01:00, got {d} {h}:{m}")
-
-    # Free-window label for UTC Mon 00 must match heatmap column Mon 05:30
-    id_, ih, im = utc_to_ist(1, 0, 0)
-    c.check((id_, ih, im) == (1, 5, 30), f"formatSlot UTC Mon 00 → IST Mon 05:30, got {id_} {ih}:{im}")
-
-    # Round-trip every display IST hour back through UTC ownership
-    for dow in range(7):
-        for hour in range(24):
-            ud, uh, _ = ist_to_utc(dow, hour, 0)
-            # The UTC hour start, converted to IST, should land in this IST hour
-            # or the previous half-hour belonging to this column's UTC bucket.
-            id_, ih, im = utc_to_ist(ud, uh, 0)
-            c.check(
-                0 <= ud < 7 and 0 <= uh < 24,
-                f"IST ({dow},{hour}) produced out-of-range UTC ({ud},{uh})",
-            )
-            # Inverse: converting that UTC hour start to IST must be uh+5:30
-            c.check(
-                (id_, ih, im) == utc_to_ist(ud, uh, 0),
-                "utc_to_ist self-check failed",
-            )
-
-    # Job start example from amd64 screenshot: 05:00 UTC → 10:30 IST
-    d, h, m = utc_to_ist(2, 5, 0)  # Tue 05:00 UTC
+    # Job start Tue 05:00 UTC = 10:30 IST → belongs in IST column 10 (not 11)
+    d, h, m = utc_to_ist(2, 5, 0)
     c.check((h, m) == (10, 30), f"Tue 05:00 UTC should be 10:30 IST, got {h}:{m}")
+    c.check(
+        (2, 5) in utc_hours_for_ist_hour(2, 10),
+        "10:30 IST start must be visible under IST column 10",
+    )
+    c.check(
+        (2, 5) in utc_hours_for_ist_hour(2, 11),
+        "1.5h hold from 10:30 IST still overlaps IST column 11",
+    )
+
+    # End exactly at next hour boundary should not require the following column
+    # 10:30 + 90m = 12:00 IST → columns 10 and 11 only.
+    c.check(
+        (2, 6) in utc_hours_for_ist_hour(2, 11),
+        "UTC hour 6 (11:30–12:30 IST) feeds IST column 11",
+    )
 
 
 def check_ist_docs_helpers(c: Checker, docs_dir: Path) -> None:
@@ -157,7 +160,9 @@ def check_ist_docs_helpers(c: Checker, docs_dir: Path) -> None:
     text = html.read_text(encoding="utf-8")
     for needle in (
         "IST_OFFSET_MIN",
-        "displayToUtc",
+        "utcHoursOverlappingIstHour",
+        "displayDemand",
+        "jobsForDisplayHour",
         "formatDisplaySlot",
         "formatJobStart",
         "formatCronEnglish",
@@ -173,8 +178,8 @@ def check_ist_docs_helpers(c: Checker, docs_dir: Path) -> None:
         "docs formatCronEnglish has stray } after weekday",
     )
     c.check(
-        "istPartsToUtc(d, h, 30)" in text or "istPartsToUtc(d, h, 30)" in text.replace(" ", ""),
-        "docs heatmap must map IST columns at :30 for 1:1 UTC buckets",
+        "istPartsToUtc(d, h, 30)" not in text or "utcHoursOverlappingIstHour" in text,
+        "docs should use IST hour-bin overlap (not sole :30 UTC ownership)",
     )
 
 
