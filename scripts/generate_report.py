@@ -2501,8 +2501,7 @@ function pad2(n) {{
 }}
 
 function formatHourLabel(hour) {{
-  if (tz === 'IST') return `${{pad2(hour)}}:30`;
-  return `${{pad2(hour)}}:00`;
+  return pad2(hour);
 }}
 
 /** Shift a week-minute timestamp by delta minutes, wrapping the 7-day week. */
@@ -2531,31 +2530,109 @@ function istPartsToUtc(dow, hour, minute = 0) {{
 }}
 
 /**
- * Heatmap lookup: display (d,h) in active tz → underlying UTC demand indices.
- *
- * IST columns are labeled HH:30 because each UTC hour bucket starts at :30 IST
- * (UTC+05:30). That keeps a 1:1 map with free-window labels from formatSlot.
+ * IST heatmap column H means the wall-clock hour [H:00, H+1:00) IST.
+ * Because IST is UTC+05:30, that window overlaps two UTC hour buckets.
+ * Example: IST Tue 10:00–11:00 = UTC 04:30–05:30 → UTC hours 4 and 5.
+ * A job starting 10:30 IST therefore appears under column 10 (not 11).
  */
-function displayToUtc(d, h) {{
-  if (tz === 'UTC') return {{ dow: d, hour: h }};
-  const u = istPartsToUtc(d, h, 30); // column h means h:30 IST == some UTC hour :00
-  return {{ dow: u.dow, hour: u.hour }};
+function utcHoursOverlappingIstHour(d, h) {{
+  const samples = [istPartsToUtc(d, h, 0), istPartsToUtc(d, h, 30)];
+  const out = [];
+  const seen = new Set();
+  for (const u of samples) {{
+    const key = u.dow + ',' + u.hour;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({{ dow: u.dow, hour: u.hour }});
+  }}
+  return out;
+}}
+
+function displayDemand(p, d, h) {{
+  if (tz === 'UTC') return p.demand[d][h] || 0;
+  // Peak concurrency anywhere inside the IST hour (covers start x:05–59 → hour x).
+  let peak = 0;
+  for (const u of utcHoursOverlappingIstHour(d, h)) {{
+    peak = Math.max(peak, p.demand[u.dow][u.hour] || 0);
+  }}
+  return peak;
+}}
+
+function parseJobStartUtc(startStr) {{
+  const m = String(startStr || '').match(/^([A-Za-z]+)\s+(\d{{1,2}}):(\d{{2}})/);
+  if (!m) return null;
+  const dow = DATA.day_names.indexOf(m[1]);
+  if (dow < 0) return null;
+  return {{
+    dow,
+    hour: Number(m[2]),
+    minute: Number(m[3]),
+    weekMin: dow * 24 * 60 + Number(m[2]) * 60 + Number(m[3]),
+  }};
+}}
+
+function jobOverlapsDisplayHour(j, d, h) {{
+  if (tz === 'UTC') {{
+    // Details are already bucketed by UTC hour in the generator.
+    return true;
+  }}
+  const start = parseJobStartUtc(j.start);
+  if (!start) return true;
+  const durMin = Math.max(1, Math.round(Number(j.duration_hours || 0) * 60));
+  const jobStart = start.weekMin;
+  const jobEnd = jobStart + durMin;
+  const winUtc = istPartsToUtc(d, h, 0);
+  const winStart = winUtc.dow * 24 * 60 + winUtc.hour * 60 + winUtc.minute;
+  const winEnd = winStart + 60;
+  // Half-open [start, end) overlap with IST hour window in UTC minutes.
+  const a0 = jobStart;
+  const a1 = jobEnd;
+  const b0 = winStart;
+  const b1 = winEnd;
+  // Normalize across week wrap for safety.
+  const overlaps = (x0, x1, y0, y1) => x0 < y1 && x1 > y0;
+  if (overlaps(a0, a1, b0, b1)) return true;
+  if (overlaps(a0 + WEEK_MIN, a1 + WEEK_MIN, b0, b1)) return true;
+  if (overlaps(a0, a1, b0 + WEEK_MIN, b1 + WEEK_MIN)) return true;
+  return false;
+}}
+
+function jobsForDisplayHour(p, d, h) {{
+  if (tz === 'UTC') return p.details[d][h] || [];
+  const jobs = [];
+  const seen = new Set();
+  for (const u of utcHoursOverlappingIstHour(d, h)) {{
+    for (const j of (p.details[u.dow][u.hour] || [])) {{
+      const key = (j.as || '') + '|' + (j.start || '') + '|' + (j.ocp_version || '') + '|' + (j.workflow || '');
+      if (seen.has(key)) continue;
+      if (!jobOverlapsDisplayHour(j, d, h)) continue;
+      seen.add(key);
+      jobs.push(j);
+    }}
+  }}
+  return jobs;
 }}
 
 function formatSlot(day, hour) {{
-  // Input is always a UTC hour bucket (free windows / busiest lists store UTC).
+  // Input is a UTC hour bucket (free/busy lists). In IST, show the IST hour(s)
+  // that wall-clock hour covers so labels match heatmap columns.
   if (tz === 'UTC') return `${{day}} ${{pad2(hour)}}:00 UTC`;
   let dow = DATA.day_names.indexOf(day);
   if (dow < 0) dow = 0;
-  const ist = utcPartsToIst(dow, hour, 0);
-  return `${{DATA.day_names[ist.dow]}} ${{pad2(ist.hour)}}:${{pad2(ist.minute)}} IST`;
+  const start = utcPartsToIst(dow, hour, 0);
+  const end = utcPartsToIst(dow, hour, 59);
+  if (start.dow === end.dow && start.hour === end.hour) {{
+    return `${{DATA.day_names[start.dow]}} ${{pad2(start.hour)}}:00 IST`;
+  }}
+  // UTC hour spans two IST hour columns (always, with +05:30).
+  return `${{DATA.day_names[start.dow]}} ${{pad2(start.hour)}}:00–${{pad2(end.hour)}}:00 IST`;
 }}
 
 function formatDisplaySlot(d, h) {{
-  // Input is the heatmap display coordinate in the active timezone.
+  // Heatmap display coordinate in the active timezone (hour bin H:00–H+1:00).
   const day = DATA.day_names[d];
   if (tz === 'UTC') return `${{day}} ${{pad2(h)}}:00 UTC`;
-  return `${{day}} ${{pad2(h)}}:30 IST`;
+  return `${{day}} ${{pad2(h)}}:00 IST`;
 }}
 
 function formatJobStart(startStr) {{
@@ -2694,8 +2771,7 @@ function renderHeatmap(p) {{
   for (let d = 0; d < 7; d++) {{
     html += `<tr><th>${{days[d]}}</th>`;
     for (let h = 0; h < 24; h++) {{
-      const utc = displayToUtc(d, h);
-      const inUse = p.demand[utc.dow][utc.hour];
+      const inUse = displayDemand(p, d, h);
       const available = p.capacity - inUse;
       const cls = cellClass(inUse, p.capacity);
       const tip = `${{formatDisplaySlot(d, h)}} — ${{inUse}} leases in use, ${{available}} available (of ${{p.capacity}})`;
@@ -2712,9 +2788,8 @@ function renderHeatmap(p) {{
 
 function showCell(p, d, h) {{
   const el = document.getElementById('cell-detail');
-  const utc = displayToUtc(d, h);
-  const jobs = p.details[utc.dow][utc.hour] || [];
-  const inUse = p.demand[utc.dow][utc.hour] || 0;
+  const jobs = jobsForDisplayHour(p, d, h);
+  const inUse = displayDemand(p, d, h);
   const available = p.capacity - inUse;
   el.style.display = 'block';
   el.innerHTML = `<h3>${{formatDisplaySlot(d, h)}} — ${{inUse}} lease(s) in use · ${{available}} available (capacity ${{p.capacity}})</h3>` +
