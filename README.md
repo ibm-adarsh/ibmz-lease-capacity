@@ -77,7 +77,7 @@ This is a **configured schedule planning model**, not live Boskos occupancy.
   1. Sippy **successful** ProwJob timing (success-run median when pass rate is mixed; same OCP version, else nearest version with passes; never install↔upgrade mix). Fail-only averages are ignored.
   2. Median of the same job name / job family / workflow (from success-backed samples)
   3. `--duration-hours` fallback (default **4h**) when there is no successful history yet
-- IST toggle **remaps** the heatmap to IST hour bins (`H:00–H+1:00`): a job starting at `H:05–H:59` falls in column `H`, and a hold ending at `Y:10–Y:59` still covers column `Y`. Free windows, cell details, and inventory schedules convert too. Prow cron source values stay UTC.
+- IST toggle **remaps** the heatmap, free/busy lists, peak metrics, cell details, and inventory schedules to IST hour bins (`H:00–H+1:00`): a job starting at `H:05–H:59` falls in column `H`, and a hold ending at `Y:10–Y:59` still covers column `Y`. Prow cron source values stay UTC.
 - A small `--lease-buffer-minutes` (default 15) is added on top of observed runtime
 - Prow cron expressions remain UTC; only display labels convert
 - `low-frequency` jobs (`@yearly` / day-of-month) are listed but excluded from the weekly heatmap

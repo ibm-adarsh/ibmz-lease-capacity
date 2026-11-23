@@ -1381,32 +1381,57 @@ def rank_slots(
 def contiguous_free_blocks(
     demand: list[list[int]], capacity: int, min_spare: int = 1, min_hours: int = 2
 ) -> list[dict[str, Any]]:
-    """Find weekday-friendly contiguous free windows for scheduling advice."""
+    """Find contiguous free windows for scheduling advice (may wrap midnight/week)."""
+    n = 7 * 24
+    spare = [capacity - demand[d][h] for d in range(7) for h in range(24)]
     blocks: list[dict[str, Any]] = []
-    for d in range(7):
-        h = 0
-        while h < 24:
-            spare = capacity - demand[d][h]
-            if spare < min_spare:
-                h += 1
-                continue
-            start = h
-            min_sp = spare
-            while h < 24 and (capacity - demand[d][h]) >= min_spare:
-                min_sp = min(min_sp, capacity - demand[d][h])
-                h += 1
-            length = h - start
-            if length >= min_hours:
-                blocks.append(
-                    {
-                        "day": DAY_NAMES[d],
-                        "dow": d,
-                        "start_hour": start,
-                        "end_hour": h,
-                        "hours": length,
-                        "min_spare": min_sp,
-                    }
-                )
+
+    if all(s >= min_spare for s in spare):
+        blocks.append(
+            {
+                "day": DAY_NAMES[0],
+                "dow": 0,
+                "start_hour": 0,
+                "end_dow": 0,
+                "end_day": DAY_NAMES[0],
+                "end_hour": 0,
+                "hours": n,
+                "min_spare": min(spare) if spare else 0,
+            }
+        )
+        return blocks
+
+    starts = [
+        i
+        for i in range(n)
+        if spare[i] >= min_spare and spare[(i - 1) % n] < min_spare
+    ]
+    for i in starts:
+        j = i
+        min_sp = spare[i]
+        while spare[j % n] >= min_spare:
+            min_sp = min(min_sp, spare[j % n])
+            j += 1
+            if j - i >= n:
+                break
+        length = min(j - i, n)
+        if length < min_hours:
+            continue
+        start_d, start_h = divmod(i, 24)
+        end_pos = (i + length) % n
+        end_d, end_h = divmod(end_pos, 24)
+        blocks.append(
+            {
+                "day": DAY_NAMES[start_d],
+                "dow": start_d,
+                "start_hour": start_h,
+                "end_dow": end_d,
+                "end_day": DAY_NAMES[end_d],
+                "end_hour": end_h,  # exclusive
+                "hours": length,
+                "min_spare": min_sp,
+            }
+        )
     blocks.sort(key=lambda b: (-b["min_spare"], -b["hours"], b["dow"], b["start_hour"]))
     return blocks
 
@@ -2131,10 +2156,20 @@ ul.slots li:last-child {{ border-bottom: 0; }}
   white-space: nowrap;
   letter-spacing: 0.01em;
 }}
+.badge.busy {{
+  background: color-mix(in srgb, var(--warn-bg) 85%, var(--panel));
+  border-color: color-mix(in srgb, var(--warn) 45%, var(--border));
+  color: var(--warn-text);
+}}
 [data-theme="dark"] .badge {{
   background: rgba(66, 190, 101, 0.22);
   border-color: rgba(66, 190, 101, 0.65);
   color: #b6f5c8;
+}}
+[data-theme="dark"] .badge.busy {{
+  background: rgba(241, 194, 27, 0.22);
+  border-color: rgba(241, 194, 27, 0.65);
+  color: #f5d76e;
 }}
 .filters {{ display: flex; flex-wrap: wrap; gap: 0.55rem; margin-bottom: 0.85rem; }}
 .filters input, .filters select {{
@@ -2389,7 +2424,7 @@ table.jobs tbody tr:hover, table.wf tbody tr:hover {{ background: var(--accent-s
         <option value="">All duration sources</option>
         <option value="sippy">Sippy observed</option>
         <option value="workflow">Median fallback</option>
-        <option value="default">Default / timeout</option>
+        <option value="default">Default</option>
       </select>
     </div>
     <div class="jobs-wrap">
@@ -2448,7 +2483,7 @@ const DATA = JSON.parse(document.getElementById('report-data').textContent);
 const RELEASE_BLOB_BASE = '{RELEASE_BLOB_BASE}';
 const PROW_HISTORY_BASE = '{PROW_HISTORY_BASE}';
 let active = 0;
-let tz = 'UTC';
+let tz = (localStorage.getItem('ibmz-lease-tz') === 'IST') ? 'IST' : 'UTC';
 
 document.getElementById('generated').textContent = DATA.generated_at;
 if (DATA.source) {{
@@ -2478,10 +2513,17 @@ document.querySelectorAll('#theme-toggle button').forEach(btn => {{
   }};
 }});
 
+function syncTzToggle() {{
+  document.querySelectorAll('#tz-toggle button').forEach(b => {{
+    b.classList.toggle('active', b.dataset.tz === tz);
+  }});
+}}
+syncTzToggle();
 document.querySelectorAll('#tz-toggle button').forEach(btn => {{
   btn.onclick = () => {{
-    tz = btn.dataset.tz;
-    document.querySelectorAll('#tz-toggle button').forEach(b => b.classList.toggle('active', b === btn));
+    tz = btn.dataset.tz || 'UTC';
+    localStorage.setItem('ibmz-lease-tz', tz);
+    syncTzToggle();
     renderAll();
   }};
 }});
@@ -2613,26 +2655,11 @@ function jobsForDisplayHour(p, d, h) {{
   return jobs;
 }}
 
-function formatSlot(day, hour) {{
-  // Input is a UTC hour bucket (free/busy lists). In IST, show the IST hour(s)
-  // that wall-clock hour covers so labels match heatmap columns.
-  if (tz === 'UTC') return `${{day}} ${{pad2(hour)}}:00 UTC`;
-  let dow = DATA.day_names.indexOf(day);
-  if (dow < 0) dow = 0;
-  const start = utcPartsToIst(dow, hour, 0);
-  const end = utcPartsToIst(dow, hour, 59);
-  if (start.dow === end.dow && start.hour === end.hour) {{
-    return `${{DATA.day_names[start.dow]}} ${{pad2(start.hour)}}:00 IST`;
-  }}
-  // UTC hour spans two IST hour columns (always, with +05:30).
-  return `${{DATA.day_names[start.dow]}} ${{pad2(start.hour)}}:00–${{pad2(end.hour)}}:00 IST`;
-}}
-
 function formatDisplaySlot(d, h) {{
-  // Heatmap display coordinate in the active timezone (hour bin H:00–H+1:00).
+  // Heatmap / slot display coordinate in the active timezone (hour bin H:00–H+1:00).
   const day = DATA.day_names[d];
-  if (tz === 'UTC') return `${{day}} ${{pad2(h)}}:00 UTC`;
-  return `${{day}} ${{pad2(h)}}:00 IST`;
+  const suffix = tz === 'IST' ? 'IST' : 'UTC';
+  return `${{day}} ${{pad2(h)}}:00 ${{suffix}}`;
 }}
 
 function formatJobStart(startStr) {{
@@ -2649,31 +2676,119 @@ function formatJobStart(startStr) {{
   return `${{DATA.day_names[ist.dow]}} ${{pad2(ist.hour)}}:${{pad2(ist.minute)}} IST`;
 }}
 
-function formatCronEnglish(text) {{
-  // cron_english is authored in UTC; rewrite clock times when IST is selected.
-  if (tz === 'UTC' || !text) return text || '';
+function formatEnglishDayList(dows) {{
   const longDays = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const uniq = [...new Set(dows)].sort((a, b) => a - b);
+  if (uniq.length === 7) return 'every day';
+  if (!uniq.length) return '';
+  const ranges = [];
+  let start = uniq[0], prev = uniq[0];
+  for (let i = 1; i < uniq.length; i++) {{
+    const d = uniq[i];
+    if (d === prev + 1) {{ prev = d; continue; }}
+    ranges.push([start, prev]);
+    start = prev = d;
+  }}
+  ranges.push([start, prev]);
+  const parts = [];
+  for (const [a, b] of ranges) {{
+    if (a === b) parts.push(longDays[a]);
+    else if (b === a + 1) {{ parts.push(longDays[a]); parts.push(longDays[b]); }}
+    else parts.push(`${{longDays[a]}}–${{longDays[b]}}`);
+  }}
+  if (parts.length === 1) return parts[0];
+  if (parts.length === 2) return `${{parts[0]}} and ${{parts[1]}}`;
+  return parts.slice(0, -1).join(', ') + ', and ' + parts[parts.length - 1];
+}}
+
+function parseEnglishDayPhrase(phrase) {{
+  const longDays = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const raw = String(phrase || '').trim();
+  // "Every day at …" captures dayPart as "day".
+  if (!raw || /^day$/i.test(raw) || /^every day$/i.test(raw)) {{
+    return {{ every: true, days: [0,1,2,3,4,5,6] }};
+  }}
+  const days = [];
+  const tokens = raw.split(/,|\\band\\b/i).map(s => s.trim()).filter(Boolean);
+  for (const tok of tokens) {{
+    const m = tok.match(/^(Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday)\\s*[–-]\\s*(Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday)$/i);
+    if (m) {{
+      const ai = longDays.findIndex(d => d.toLowerCase() === m[1].toLowerCase());
+      const bi = longDays.findIndex(d => d.toLowerCase() === m[2].toLowerCase());
+      if (ai >= 0 && bi >= 0 && ai <= bi) {{
+        for (let d = ai; d <= bi; d++) days.push(d);
+        continue;
+      }}
+    }}
+    const di = longDays.findIndex(d => d.toLowerCase() === tok.toLowerCase());
+    if (di >= 0) days.push(di);
+  }}
+  return {{ every: false, days: [...new Set(days)].sort((a, b) => a - b) }};
+}}
+
+function convertUtcClockList(text) {{
+  return String(text || '').replace(/\\b(\\d{{2}}):(\\d{{2}})\\b/g, (full, hh, mm) => {{
+    const ist = utcPartsToIst(0, Number(hh), Number(mm));
+    return `${{pad2(ist.hour)}}:${{pad2(ist.minute)}}`;
+  }});
+}}
+
+function formatCronEnglish(text) {{
+  // cron_english is authored in UTC; rewrite day spans + clock times for IST.
+  // Note: use \\b in this Python f-string so the emitted JS keeps word boundaries.
+  if (tz === 'UTC' || !text) return text || '';
   let out = String(text);
-  // "Every Tuesday at 08:00 UTC" / "Tuesday at 08:00 UTC"
+
+  // "every hour at :00 UTC" → ":30 IST" (before the generic Every … at … rewriter).
+  out = out.replace(/\\bevery hour at :(\\d{{2}}) UTC\\b/gi, (full, mm) => {{
+    const ist = utcPartsToIst(0, 0, Number(mm));
+    return `every hour at :${{pad2(ist.minute)}} IST`;
+  }});
+
+  // "hourly from 08:00 to 17:00 UTC"
   out = out.replace(
-    /\b(Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday)\b([^\d]{{0,24}})(\d{{2}}):(\d{{2}}) UTC/g,
-    (full, dayWord, mid, hh, mm) => {{
-      const dow = longDays.indexOf(dayWord);
-      const ist = utcPartsToIst(dow, Number(hh), Number(mm));
-      return `${{longDays[ist.dow]}}${{mid}}${{pad2(ist.hour)}}:${{pad2(ist.minute)}} IST`;
+    /hourly from\\s+(\\d{{2}}):(\\d{{2}})\\s+to\\s+(\\d{{2}}):(\\d{{2}})\\s+UTC\\b/gi,
+    (full, h1, m1, h2, m2) => {{
+      const a = utcPartsToIst(0, Number(h1), Number(m1));
+      const b = utcPartsToIst(0, Number(h2), Number(m2));
+      return `hourly from ${{pad2(a.hour)}}:${{pad2(a.minute)}} to ${{pad2(b.hour)}}:${{pad2(b.minute)}} IST`;
     }}
   );
-  // Remaining bare times: "Every day at 00:40 UTC"
-  out = out.replace(/\b(\d{{2}}):(\d{{2}}) UTC\b/g, (full, hh, mm) => {{
-    const ist = utcPartsToIst(0, Number(hh), Number(mm));
-    return `${{pad2(ist.hour)}}:${{pad2(ist.minute)}} IST`;
-  }});
-  // "every hour at :00 UTC" → ":30 IST"
-  out = out.replace(/:(\d{{2}}) UTC\b/g, (full, mm) => {{
-    const ist = utcPartsToIst(0, 0, Number(mm));
-    return `:${{pad2(ist.minute)}} IST`;
-  }});
-  return out.replace(/\bUTC\b/g, 'IST');
+
+  // "Every Monday–Thursday at 22:00 UTC" / "Every day at 00:40 UTC"
+  // Remap the full weekday set with the first clock time (midnight-crossing safe).
+  out = out.replace(
+    /\\bEvery\\s+(?!hour\\b)(.+?)\\s+at\\s+(.+?)\\s+UTC\\b/gi,
+    (full, dayPart, timePart) => {{
+      const parsed = parseEnglishDayPhrase(dayPart);
+      const first = String(timePart).match(/(\\d{{2}}):(\\d{{2}})/);
+      const hh = first ? Number(first[1]) : 0;
+      const mm = first ? Number(first[2]) : 0;
+      if (!parsed.days.length && !parsed.every) return full;
+      const istDays = parsed.days.map(d => utcPartsToIst(d, hh, mm).dow);
+      const dayBit = (parsed.every || new Set(istDays).size === 7)
+        ? 'day'
+        : formatEnglishDayList(istDays);
+      const timeBit = convertUtcClockList(timePart);
+      return `Every ${{dayBit}} at ${{timeBit}} IST`;
+    }}
+  );
+
+  // Remaining phrases that still end in UTC: convert every HH:MM, then the label.
+  // Bare ":MM UTC" (not part of HH:MM) is converted separately so "08:00 UTC"
+  // is not mistaken for a :00 minute marker.
+  if (/\\bUTC\\b/.test(out)) {{
+    out = out.replace(/\\b(\\d{{2}}):(\\d{{2}})\\b/g, (full, hh, mm) => {{
+      const ist = utcPartsToIst(0, Number(hh), Number(mm));
+      return `${{pad2(ist.hour)}}:${{pad2(ist.minute)}}`;
+    }});
+    out = out.replace(/(?<!\\d):(\\d{{2}}) UTC\\b/g, (full, mm) => {{
+      const ist = utcPartsToIst(0, 0, Number(mm));
+      return `:${{pad2(ist.minute)}} IST`;
+    }});
+    out = out.replace(/\\bUTC\\b/g, 'IST');
+  }}
+  return out;
 }}
 
 function durationPill(j) {{
@@ -2740,17 +2855,38 @@ function renderTabs() {{
   }});
 }}
 
+function displayPeakStats(p) {{
+  // In IST mode recompute from the same overlap rules as the heatmap.
+  if (tz === 'UTC') {{
+    return {{
+      peak: p.peak_demand || 0,
+      overcommit: p.overcommit_hours || 0,
+    }};
+  }}
+  let peak = 0;
+  let overcommit = 0;
+  for (let d = 0; d < 7; d++) {{
+    for (let h = 0; h < 24; h++) {{
+      const dem = displayDemand(p, d, h);
+      peak = Math.max(peak, dem);
+      if (dem > p.capacity) overcommit += 1;
+    }}
+  }}
+  return {{ peak, overcommit }};
+}}
+
 function renderMetrics(p) {{
   document.getElementById('profile-title').textContent = p.name;
-  const minAvail = Math.max(0, p.capacity - (p.peak_demand || 0));
+  const stats = displayPeakStats(p);
+  const minAvail = Math.max(0, p.capacity - stats.peak);
   const items = [
     ['Total leases', p.capacity, 'How many machines/leases this profile can run at once.'],
-    ['Busiest moment', p.peak_demand, 'Most leases in use at the same time in a normal week.'],
+    ['Busiest moment', stats.peak, 'Most leases in use at the same time in a normal week' + (tz === 'IST' ? ' (IST hour bins).' : '.')],
     ['Still free at peak', minAvail, 'Leases left even during the busiest hour (capacity − peak).'],
     ['All jobs', p.job_count, 'Total periodic jobs configured on this profile.'],
     ['Weekly jobs', p.weekly_job_count, 'Jobs that run every week/day and appear in the heatmap.'],
     ['Rare jobs', p.low_frequency_job_count, 'Monthly/yearly jobs listed below but not in the heatmap.'],
-    ['Overbooked hours', p.overcommit_hours, 'Hours where planned jobs need more leases than capacity.'],
+    ['Overbooked hours', stats.overcommit, 'Hours where planned jobs need more leases than capacity' + (tz === 'IST' ? ' (IST hour bins).' : '.')],
     ['Typical job length', (p.median_duration_hours != null ? p.median_duration_hours + 'h' : '—'), 'Median time a job holds a lease (full pre → test → post).'],
     ['Sippy data coverage', p.sippy_coverage != null ? Math.round(p.sippy_coverage * 100) + '%' : '—', 'Share of jobs with real runtime data from Sippy CI.'],
   ];
@@ -2813,22 +2949,88 @@ function wireSlotScroll(listEl) {{
   requestAnimationFrame(update);
 }}
 
+function buildDisplayDemandGrid(p) {{
+  const grid = Array.from({{ length: 7 }}, () => Array(24).fill(0));
+  for (let d = 0; d < 7; d++) {{
+    for (let h = 0; h < 24; h++) grid[d][h] = displayDemand(p, d, h);
+  }}
+  return grid;
+}}
+
+function rankDisplaySlots(grid, capacity) {{
+  const cells = [];
+  for (let d = 0; d < 7; d++) {{
+    for (let h = 0; h < 24; h++) {{
+      const demand = grid[d][h];
+      cells.push({{ dow: d, hour: h, demand, spare: capacity - demand, capacity }});
+    }}
+  }}
+  const busiest = [...cells].sort((a, b) => b.demand - a.demand || a.dow - b.dow || a.hour - b.hour);
+  const free = cells
+    .filter(c => c.spare >= 1)
+    .sort((a, b) => b.spare - a.spare || a.dow - b.dow || a.hour - b.hour);
+  return {{ busiest, free }};
+}}
+
+function contiguousDisplayBlocks(grid, capacity, minSpare = 1, minHours = 2) {{
+  const n = 7 * 24;
+  const spare = [];
+  for (let d = 0; d < 7; d++) for (let h = 0; h < 24; h++) spare.push(capacity - grid[d][h]);
+  const blocks = [];
+  if (spare.every(s => s >= minSpare)) {{
+    blocks.push({{ dow: 0, start_hour: 0, end_dow: 0, end_hour: 0, hours: n, min_spare: Math.min(...spare) }});
+    return blocks;
+  }}
+  const starts = [];
+  for (let i = 0; i < n; i++) {{
+    if (spare[i] >= minSpare && spare[(i - 1 + n) % n] < minSpare) starts.push(i);
+  }}
+  for (const i of starts) {{
+    let j = i;
+    let minSp = spare[i];
+    while (spare[j % n] >= minSpare) {{
+      minSp = Math.min(minSp, spare[j % n]);
+      j += 1;
+      if (j - i >= n) break;
+    }}
+    const length = Math.min(j - i, n);
+    if (length < minHours) continue;
+    const start_d = Math.floor(i / 24);
+    const start_h = i % 24;
+    const endPos = (i + length) % n;
+    const end_d = Math.floor(endPos / 24);
+    const end_h = endPos % 24;
+    blocks.push({{
+      dow: start_d,
+      start_hour: start_h,
+      end_dow: end_d,
+      end_hour: end_h,
+      hours: length,
+      min_spare: minSp,
+    }});
+  }}
+  blocks.sort((a, b) => b.min_spare - a.min_spare || b.hours - a.hours || a.dow - b.dow || a.start_hour - b.start_hour);
+  return blocks;
+}}
+
 function renderSlots(p) {{
-  const blocks = document.getElementById('free-blocks');
-  const free = document.getElementById('free-slots');
-  const busy = document.getElementById('busy-slots');
-  blocks.innerHTML = (p.free_blocks || []).map(b => {{
-    const endDay = b.end_hour >= 24 ? DATA.day_names[(b.dow + 1) % 7] : b.day;
-    const endHour = b.end_hour % 24;
-    return `<li><span>${{formatSlot(b.day, b.start_hour)}} → ${{formatSlot(endDay, endHour)}} (${{b.hours}}h)</span><span class="badge">≥${{b.min_spare}} leases free</span></li>`;
-  }}).join('') || '<li style="color:var(--muted)">No multi-hour free windows under current model.</li>';
-  free.innerHTML = (p.free || []).map(c =>
-    `<li><span>${{formatSlot(c.day, c.hour)}}</span><span class="badge">${{c.demand}} in use · ${{c.spare}} available</span></li>`
+  const blocksEl = document.getElementById('free-blocks');
+  const freeEl = document.getElementById('free-slots');
+  const busyEl = document.getElementById('busy-slots');
+  // Always derive lists from the active timezone grid so IST matches the heatmap.
+  const grid = buildDisplayDemandGrid(p);
+  const ranked = rankDisplaySlots(grid, p.capacity);
+  const blocks = contiguousDisplayBlocks(grid, p.capacity);
+  blocksEl.innerHTML = blocks.map(b =>
+    `<li><span>${{formatDisplaySlot(b.dow, b.start_hour)}} → ${{formatDisplaySlot(b.end_dow, b.end_hour)}} (${{b.hours}}h)</span><span class="badge">≥${{b.min_spare}} leases free</span></li>`
+  ).join('') || '<li style="color:var(--muted)">No multi-hour free windows under current model.</li>';
+  freeEl.innerHTML = ranked.free.slice(0, 48).map(c =>
+    `<li><span>${{formatDisplaySlot(c.dow, c.hour)}}</span><span class="badge">${{c.demand}} in use · ${{c.spare}} available</span></li>`
   ).join('') || '<li style="color:var(--muted)">No free capacity under current model.</li>';
-  busy.innerHTML = (p.busiest || []).map(c =>
-    `<li><span>${{formatSlot(c.day, c.hour)}}</span><span class="badge">${{c.demand}} in use / ${{c.capacity}} · ${{c.spare}} free</span></li>`
+  busyEl.innerHTML = ranked.busiest.slice(0, 48).map(c =>
+    `<li><span>${{formatDisplaySlot(c.dow, c.hour)}}</span><span class="badge busy">${{c.demand}} in use / ${{c.capacity}} · ${{c.spare}} free</span></li>`
   ).join('');
-  [blocks, free, busy].forEach(wireSlotScroll);
+  [blocksEl, freeEl, busyEl].forEach(wireSlotScroll);
 }}
 
 function renderWorkflows(p) {{
@@ -2863,7 +3065,8 @@ function renderJobs(p) {{
     if (dsrc === 'workflow' && !['workflow-median','as-median','family-median'].includes(j.duration_source)) return false;
     if (dsrc === 'default' && !['default','timeout'].includes(j.duration_source)) return false;
     if (!q) return true;
-    const hay = [j.as, j.cron || '', j.cron_english || '', j.workflow || '', j.source_file, j.ocp_version, j.prow_job_name || ''].join(' ').toLowerCase();
+    const english = formatCronEnglish(j.cron_english || (j.interval ? ('Every ' + j.interval) : ''));
+    const hay = [j.as, j.cron || '', j.cron_english || '', english, j.workflow || '', j.source_file, j.ocp_version, j.prow_job_name || ''].join(' ').toLowerCase();
     return hay.includes(q);
   }});
   document.getElementById('jobs-body').innerHTML = rows.map(j => {{

@@ -184,8 +184,34 @@ def check_ist_docs_helpers(c: Checker, docs_dir: Path) -> None:
         "docs formatCronEnglish has stray } after weekday",
     )
     c.check(
-        "istPartsToUtc(d, h, 30)" not in text or "utcHoursOverlappingIstHour" in text,
-        "docs should use IST hour-bin overlap (not sole :30 UTC ownership)",
+        "utcHoursOverlappingIstHour" in text,
+        "docs should use IST hour-bin overlap helpers",
+    )
+    c.check(
+        "buildDisplayDemandGrid" in text and "contiguousDisplayBlocks" in text,
+        "docs should derive free/busy lists from the active timezone grid",
+    )
+    c.check(
+        "formatEnglishDayList" in text and "parseEnglishDayPhrase" in text,
+        "docs should remap full weekday spans in formatCronEnglish",
+    )
+    c.check(
+        "badge.busy" in text,
+        "docs should style busy-slot badges differently from free badges",
+    )
+    c.check(
+        "ibmz-lease-tz" in text,
+        "docs should persist IST/UTC timezone toggle",
+    )
+    c.check(
+        "\x08(Sunday" not in text and "\x08UTC\x08" not in text,
+        "docs formatCronEnglish must not contain backspace-corrupted regexes",
+    )
+    # Behavioral: Monday–Thursday 22:00 UTC must become Tuesday–Friday under IST.
+    # (Lightweight presence of the midnight-crossing rewriter path.)
+    c.check(
+        "utcPartsToIst(d, hh, mm).dow" in text or "utcPartsToIst(d, hh, mm)" in text,
+        "docs should convert each weekday with the UTC clock when remapping IST English",
     )
 
 

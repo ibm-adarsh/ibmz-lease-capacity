@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-23 17:52:16 UTC \u00b7 2026-11-23 23:22:16 IST",
+  "generated_at": "2026-11-23 18:14:06 UTC \u00b7 2026-11-23 23:44:06 IST",
   "duration_meta": {
     "enabled": true,
     "default_hours": 4.0,
@@ -176,59 +176,13 @@
       "sippy_coverage": 0.7924528301886793,
       "top_free_blocks": [
         {
-          "day": "Fri",
-          "dow": 5,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 7
-        },
-        {
           "day": "Sun",
           "dow": 0,
           "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 5
-        },
-        {
-          "day": "Sat",
-          "dow": 6,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 4
-        },
-        {
-          "day": "Mon",
-          "dow": 1,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 3
-        },
-        {
-          "day": "Wed",
-          "dow": 3,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 3
-        },
-        {
-          "day": "Thu",
-          "dow": 4,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 3
-        },
-        {
-          "day": "Tue",
-          "dow": 2,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
+          "end_dow": 0,
+          "end_day": "Sun",
+          "end_hour": 0,
+          "hours": 168,
           "min_spare": 2
         }
       ],
@@ -496,56 +450,10 @@
           "day": "Sun",
           "dow": 0,
           "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 1
-        },
-        {
-          "day": "Mon",
-          "dow": 1,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 1
-        },
-        {
-          "day": "Tue",
-          "dow": 2,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 1
-        },
-        {
-          "day": "Wed",
-          "dow": 3,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 1
-        },
-        {
-          "day": "Thu",
-          "dow": 4,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 1
-        },
-        {
-          "day": "Fri",
-          "dow": 5,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 1
-        },
-        {
-          "day": "Sat",
-          "dow": 6,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
+          "end_dow": 0,
+          "end_day": "Sun",
+          "end_hour": 0,
+          "hours": 168,
           "min_spare": 1
         }
       ],
@@ -809,67 +717,23 @@
       "sippy_coverage": 1.0,
       "top_free_blocks": [
         {
-          "day": "Sun",
-          "dow": 0,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 1
-        },
-        {
-          "day": "Mon",
-          "dow": 1,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 1
-        },
-        {
-          "day": "Wed",
-          "dow": 3,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 1
-        },
-        {
-          "day": "Fri",
-          "dow": 5,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 1
-        },
-        {
-          "day": "Sat",
-          "dow": 6,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 1
-        },
-        {
-          "day": "Tue",
-          "dow": 2,
-          "start_hour": 10,
-          "end_hour": 24,
-          "hours": 14,
-          "min_spare": 1
-        },
-        {
           "day": "Thu",
           "dow": 4,
           "start_hour": 10,
-          "end_hour": 24,
-          "hours": 14,
+          "end_dow": 2,
+          "end_day": "Tue",
+          "end_hour": 5,
+          "hours": 115,
           "min_spare": 1
         },
         {
           "day": "Tue",
           "dow": 2,
-          "start_hour": 0,
+          "start_hour": 10,
+          "end_dow": 4,
+          "end_day": "Thu",
           "end_hour": 5,
-          "hours": 5,
+          "hours": 43,
           "min_spare": 1
         }
       ],
@@ -1139,56 +1003,10 @@
           "day": "Sun",
           "dow": 0,
           "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 2
-        },
-        {
-          "day": "Mon",
-          "dow": 1,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 2
-        },
-        {
-          "day": "Tue",
-          "dow": 2,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 2
-        },
-        {
-          "day": "Wed",
-          "dow": 3,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 2
-        },
-        {
-          "day": "Thu",
-          "dow": 4,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 2
-        },
-        {
-          "day": "Fri",
-          "dow": 5,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 2
-        },
-        {
-          "day": "Sat",
-          "dow": 6,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
+          "end_dow": 0,
+          "end_day": "Sun",
+          "end_hour": 0,
+          "hours": 168,
           "min_spare": 2
         }
       ],
@@ -1455,56 +1273,10 @@
           "day": "Sun",
           "dow": 0,
           "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 1
-        },
-        {
-          "day": "Mon",
-          "dow": 1,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 1
-        },
-        {
-          "day": "Tue",
-          "dow": 2,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 1
-        },
-        {
-          "day": "Wed",
-          "dow": 3,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 1
-        },
-        {
-          "day": "Thu",
-          "dow": 4,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 1
-        },
-        {
-          "day": "Fri",
-          "dow": 5,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 1
-        },
-        {
-          "day": "Sat",
-          "dow": 6,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
+          "end_dow": 0,
+          "end_day": "Sun",
+          "end_hour": 0,
+          "hours": 168,
           "min_spare": 1
         }
       ],
@@ -1779,56 +1551,10 @@
           "day": "Sun",
           "dow": 0,
           "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 5
-        },
-        {
-          "day": "Mon",
-          "dow": 1,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 5
-        },
-        {
-          "day": "Tue",
-          "dow": 2,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 5
-        },
-        {
-          "day": "Wed",
-          "dow": 3,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 5
-        },
-        {
-          "day": "Thu",
-          "dow": 4,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 5
-        },
-        {
-          "day": "Fri",
-          "dow": 5,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 5
-        },
-        {
-          "day": "Sat",
-          "dow": 6,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
+          "end_dow": 0,
+          "end_day": "Sun",
+          "end_hour": 0,
+          "hours": 168,
           "min_spare": 5
         }
       ],
@@ -2096,56 +1822,10 @@
           "day": "Sun",
           "dow": 0,
           "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 2
-        },
-        {
-          "day": "Mon",
-          "dow": 1,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 2
-        },
-        {
-          "day": "Tue",
-          "dow": 2,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 2
-        },
-        {
-          "day": "Wed",
-          "dow": 3,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 2
-        },
-        {
-          "day": "Thu",
-          "dow": 4,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 2
-        },
-        {
-          "day": "Fri",
-          "dow": 5,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
-          "min_spare": 2
-        },
-        {
-          "day": "Sat",
-          "dow": 6,
-          "start_hour": 0,
-          "end_hour": 24,
-          "hours": 24,
+          "end_dow": 0,
+          "end_day": "Sun",
+          "end_hour": 0,
+          "hours": 168,
           "min_spare": 2
         }
       ],
