@@ -10,7 +10,7 @@ Interactive dashboard for **IBM Z / s390x** CI lease usage across
 - Auto-discovered full `libvirt-s390x-vpn*` cluster profile names (including new profiles as they appear in openshift/release)
 - All periodic jobs using those profiles across OCP versions
 - Cron timing, workflow, config / Sippy / Prow history links
-- Observed hold durations from [Sippy](https://sippy.dptools.openshift.org) (cross-version same-job borrow, then median / timeout / default fallbacks)
+- Observed hold durations from [Sippy](https://sippy.dptools.openshift.org) **successful runs** (fail-only averages ignored; cross-version same-job borrow; 4h default until a pass exists)
 - Correct lease counts for workflows that hold more than one lease of the same type
 - Week × hour **concurrency heatmap** vs Boskos lease capacity
 - Busiest hours, free hours, and multi-hour free windows for scheduling
@@ -53,7 +53,7 @@ python3 scripts/generate_report.py \
   --release-repo /path/to/openshift/release \
   --out-dir docs \
   --fetch-sippy-durations \
-  --duration-hours 5 \
+  --duration-hours 4 \
   --lease-buffer-minutes 15
 ```
 
@@ -74,12 +74,12 @@ This is a **configured schedule planning model**, not live Boskos occupancy.
 - Example: profile capacity `10`, one job with a `3h` lease hold ⇒ for those 3 hours
   only `9` leases remain available
 - Duration preference order:
-  1. Sippy full ProwJob average for the same job name (same OCP version, else nearest version with history; never install↔upgrade mix)
-  2. Median of the same job name / job family / workflow
-  3. Job timeout, then `--duration-hours` fallback (default 5h)
-- Heatmap columns are always **UTC**; IST toggle converts tooltips and free-window labels
+  1. Sippy **successful** ProwJob timing (success-run median when pass rate is mixed; same OCP version, else nearest version with passes; never install↔upgrade mix). Fail-only averages are ignored.
+  2. Median of the same job name / job family / workflow (from success-backed samples)
+  3. `--duration-hours` fallback (default **4h**) when there is no successful history yet
+- IST toggle **remaps** the heatmap (columns are UTC hour starts shown as IST `HH:30`), free windows, cell details, and inventory schedules. Prow cron source values stay UTC.
 - A small `--lease-buffer-minutes` (default 15) is added on top of observed runtime
-- Prow cron times are **UTC** (IST toggle only changes labels)
+- Prow cron expressions remain UTC; only display labels convert
 - `low-frequency` jobs (`@yearly` / day-of-month) are listed but excluded from the weekly heatmap
 - Presubmits are excluded
 

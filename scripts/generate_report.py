@@ -4,12 +4,12 @@
 Reads an openshift/release checkout, models weekly concurrent lease demand for
 libvirt-s390x-vpn* cluster profiles, and emits a self-contained HTML dashboard
 plus CSV/JSON. Optionally enriches per-job lease-hold durations from Sippy
-(current/previous average runtime) with workflow-level and default fallbacks.
+using successful (passed) run timings, with workflow-level and default fallbacks.
 
 Example:
   python3 scripts/generate_report.py --release-repo /path/to/openshift/release
   python3 scripts/generate_report.py --release-repo ./openshift-release --out-dir docs \\
-      --fetch-sippy-durations --duration-hours 5
+      --fetch-sippy-durations --duration-hours 4
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -115,8 +116,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--duration-hours",
         type=float,
-        default=5.0,
-        help="Fallback lease-hold duration in hours when Sippy/workflow data is missing (default: 5)",
+        default=4.0,
+        help=(
+            "Fallback lease-hold duration in hours when no successful Sippy "
+            "history (or workflow/timeout sample) exists (default: 4)"
+        ),
     )
     parser.add_argument(
         "--fetch-sippy-durations",
@@ -689,7 +693,10 @@ def build_sippy_index(releases: list[str]) -> dict[str, Any]:
                 "previous_average_duration_minutes": job.get("previous_average_duration_minutes") or 0,
                 "current_runs": job.get("current_runs") or 0,
                 "previous_runs": job.get("previous_runs") or 0,
+                "current_passes": job.get("current_passes") or 0,
+                "previous_passes": job.get("previous_passes") or 0,
                 "current_pass_percentage": job.get("current_pass_percentage"),
+                "previous_pass_percentage": job.get("previous_pass_percentage"),
                 "test_grid_url": job.get("test_grid_url") or "",
             }
             # Prefer same-release exact name; keep first seen otherwise.
@@ -712,34 +719,200 @@ def build_sippy_index(releases: list[str]) -> dict[str, Any]:
     }
 
 
-def planning_minutes_from_sippy(entry: dict[str, Any]) -> float | None:
-    """Choose a conservative full-job wall-clock duration (minutes) from Sippy.
+def sippy_pass_counts(entry: dict[str, Any]) -> tuple[int, int]:
+    """Return (current_passes, previous_passes) for a Sippy job entry."""
+    return (
+        int(entry.get("current_passes") or 0),
+        int(entry.get("previous_passes") or 0),
+    )
 
-    Sippy's average duration is the entire ProwJob (start→completion), which
-    covers lease acquire through pre → test → post cleanup — not test-only.
-    Short failed runs can pull the current window down; bias toward the longer
-    recent window so lease occupancy is not under-counted.
+
+def sippy_has_successful_runs(entry: dict[str, Any] | None) -> bool:
+    """True when Sippy has at least one successful (passed) run in recent windows."""
+    if not entry:
+        return False
+    cur_p, prev_p = sippy_pass_counts(entry)
+    return (cur_p + prev_p) > 0
+
+
+def planning_minutes_from_sippy(entry: dict[str, Any]) -> float | None:
+    """Choose full-job wall-clock minutes from Sippy *successful* history only.
+
+    Sippy's job-level average mixes failed runs (often much shorter). We only
+    trust a window when it has at least one pass. Prefer an explicit
+    success-run median on the entry when present; otherwise use pass-bearing
+    window averages (near-100% pass jobs ≈ success timing).
     """
-    cur = float(entry.get("current_average_duration_minutes") or 0)
-    prev = float(entry.get("previous_average_duration_minutes") or 0)
-    cur_runs = int(entry.get("current_runs") or 0)
-    prev_runs = int(entry.get("previous_runs") or 0)
-    pass_pct = entry.get("current_pass_percentage")
-    if cur <= 0 or cur_runs <= 0:
+    success = entry.get("success_median_duration_minutes")
+    if success is not None:
+        try:
+            minutes = float(success)
+        except (TypeError, ValueError):
+            minutes = 0.0
+        if minutes > 0:
+            return minutes
+
+    if not sippy_has_successful_runs(entry):
+        return None
+
+    cur_p, prev_p = sippy_pass_counts(entry)
+    cur = float(entry.get("current_average_duration_minutes") or 0) if cur_p > 0 else 0.0
+    prev = float(entry.get("previous_average_duration_minutes") or 0) if prev_p > 0 else 0.0
+    if cur <= 0:
         cur = 0.0
-    if prev <= 0 or prev_runs <= 0:
+    if prev <= 0:
         prev = 0.0
     if cur <= 0 and prev <= 0:
         return None
-    # Prefer the current window when it looks healthy; otherwise keep the
-    # longer of current/previous so early infra fails do not under-count holds.
+
+    cur_pct = entry.get("current_pass_percentage")
+    prev_pct = entry.get("previous_pass_percentage")
+    # Prefer the healthier pass window; if both look solid, take the longer
+    # hold so lease occupancy is not under-counted.
     if cur > 0 and prev > 0:
-        if pass_pct is not None and float(pass_pct) < 80 and cur < prev * 0.85:
-            return prev
-        if cur_runs >= 3:
+        cur_healthy = cur_pct is not None and float(cur_pct) >= 90
+        prev_healthy = prev_pct is not None and float(prev_pct) >= 90
+        if cur_healthy and not prev_healthy:
             return cur
+        if prev_healthy and not cur_healthy:
+            return prev
         return max(cur, prev)
     return cur or prev
+
+
+def _sippy_json(url: str, timeout: float = 45.0) -> Any:
+    req = urllib.request.Request(url, headers={"User-Agent": "ibmz-lease-capacity/1.0"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.load(resp)
+
+
+def fetch_sippy_success_median_minutes(
+    job_name: str,
+    release: str,
+    *,
+    limit: int = 5,
+    timeout: float = 45.0,
+) -> float | None:
+    """Median wall-clock minutes across recent *successful* Sippy job runs."""
+    if not job_name or not release:
+        return None
+    filt = json.dumps(
+        {
+            "items": [
+                {"columnField": "name", "operatorValue": "equals", "value": job_name},
+                {"columnField": "overall_result", "operatorValue": "equals", "value": "S"},
+            ],
+            "linkOperator": "and",
+        }
+    )
+    runs_url = (
+        f"{SIPPY_API}/api/jobs/runs?release={urllib.parse.quote(release)}"
+        f"&filter={urllib.parse.quote(filt)}&limit={limit}"
+        f"&sortField=timestamp&sort=desc"
+    )
+    try:
+        payload = _sippy_json(runs_url, timeout=timeout)
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError):
+        return None
+    rows = payload.get("rows") if isinstance(payload, dict) else payload
+    if not isinstance(rows, list) or not rows:
+        return None
+
+    minutes: list[float] = []
+    for row in rows[:limit]:
+        prow_id = row.get("prow_id") or row.get("id")
+        if not prow_id:
+            continue
+        summary_url = (
+            f"{SIPPY_API}/api/job/run/summary?"
+            f"prow_job_run_id={urllib.parse.quote(str(prow_id))}"
+        )
+        try:
+            summary = _sippy_json(summary_url, timeout=timeout)
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError):
+            continue
+        if not isinstance(summary, dict):
+            continue
+        if str(summary.get("overallResult") or "").upper() not in ("S", "SUCCESS", ""):
+            # Empty overallResult still ok if duration present from success list.
+            if summary.get("overallResult") not in (None, ""):
+                continue
+        secs = summary.get("durationSeconds")
+        try:
+            secs_f = float(secs)
+        except (TypeError, ValueError):
+            continue
+        if secs_f > 0:
+            minutes.append(secs_f / 60.0)
+    if not minutes:
+        return None
+    return float(statistics.median(minutes))
+
+
+def _needs_success_run_sample(entry: dict[str, Any]) -> bool:
+    """Fetch per-success durations when job averages may be polluted by fails."""
+    if not sippy_has_successful_runs(entry):
+        return False
+    cur_p, _prev_p = sippy_pass_counts(entry)
+    cur_pct = entry.get("current_pass_percentage")
+    # Near-perfect current window ≈ success timing; skip extra API calls.
+    if cur_p > 0 and cur_pct is not None and float(cur_pct) >= 95:
+        return False
+    return True
+
+
+def enrich_sippy_entries_with_success_medians(
+    entries: list[dict[str, Any]],
+    *,
+    workers: int = 6,
+    limit: int = 5,
+) -> int:
+    """Attach success_median_duration_minutes on entries that need a clean sample.
+
+    Returns how many entries received a success median.
+    """
+    # Dedupe by (release, name)
+    unique: dict[tuple[str, str], dict[str, Any]] = {}
+    for entry in entries:
+        if not _needs_success_run_sample(entry):
+            continue
+        key = (str(entry.get("release") or ""), str(entry.get("name") or ""))
+        if key[0] and key[1] and key not in unique:
+            unique[key] = entry
+    if not unique:
+        return 0
+
+    filled = 0
+
+    def _one(item: tuple[tuple[str, str], dict[str, Any]]) -> tuple[dict[str, Any], float | None]:
+        (_key, entry) = item
+        minutes = fetch_sippy_success_median_minutes(
+            str(entry.get("name") or ""),
+            str(entry.get("release") or ""),
+            limit=limit,
+        )
+        return entry, minutes
+
+    print(
+        f"  Sampling successful Sippy runs for {len(unique)} jobs "
+        f"(pass-mixed averages)…",
+        flush=True,
+    )
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        futures = [pool.submit(_one, item) for item in unique.items()]
+        for fut in as_completed(futures):
+            try:
+                entry, minutes = fut.result()
+            except Exception as exc:  # noqa: BLE001 — keep generator resilient
+                print(f"WARN: success-duration sample failed: {exc}", file=sys.stderr)
+                continue
+            if minutes is None or minutes <= 0:
+                continue
+            entry["success_median_duration_minutes"] = minutes
+            filled += 1
+    # Propagate onto any duplicate references of the same entry object is N/A;
+    # callers pass the matched entry objects themselves.
+    return filled
 
 
 def _release_tuple(release: str) -> tuple[int, ...]:
@@ -762,7 +935,11 @@ def _release_distance(a: str, b: str) -> int:
 
 
 def _sippy_entry_usable(entry: dict[str, Any] | None) -> bool:
-    return bool(entry) and planning_minutes_from_sippy(entry) is not None
+    """Usable only when Sippy has successful-run history (not fail-only averages)."""
+    if not entry or not sippy_has_successful_runs(entry):
+        return False
+    # Either a success median or a pass-bearing window average must resolve.
+    return planning_minutes_from_sippy(entry) is not None
 
 
 def _is_upgrade_token(text: str | None) -> bool:
@@ -939,12 +1116,13 @@ def enrich_job_durations(
         "default_hours": default_hours,
         "lease_buffer_minutes": lease_buffer_minutes,
         "duration_basis": (
-            "Full ProwJob wall-clock (lease acquire through pre/test/post), "
-            "not test-phase only"
+            "Successful ProwJob wall-clock only (lease acquire through pre/test/post); "
+            "fail-only Sippy averages are ignored"
         ),
         "fetched_releases": [],
         "errors": [],
         "matched": 0,
+        "success_samples": 0,
         "workflow_fallback": 0,
         "default_fallback": 0,
     }
@@ -966,48 +1144,75 @@ def enrich_job_durations(
     meta["fetched_releases"] = index.get("fetched_releases") or []
     meta["errors"] = index.get("errors") or []
 
-    # First pass: direct Sippy matches (full ProwJob wall-clock).
+    # Resolve matches first, then sample successful runs where averages may be
+    # polluted by failures (0% pass jobs stay unmatched → default hours).
+    matched_pairs: list[tuple[dict[str, Any], dict[str, Any], str]] = []
+    sample_entries: list[dict[str, Any]] = []
     for job in jobs:
         entry, how = match_sippy_entry(job, index)
-        minutes = planning_minutes_from_sippy(entry) if entry else None
-        if entry and minutes:
-            hours = minutes / 60.0
-            hours = min(max(hours, min_hours), max_hours)
-            apply_lease_hold_hours(
-                job, hours, lease_buffer_minutes, max_hours=max_hours
-            )
-            job["duration_source"] = how
-            matched_name = entry.get("name") or ""
-            matched_release = entry.get("release") or ""
-            borrowed = bool(
-                matched_release
-                and job.get("ocp_version")
-                and matched_release != job.get("ocp_version")
-            )
-            job["sippy"] = {
-                "name": matched_name,
-                "release": matched_release,
-                "borrowed": borrowed,
-                "job_ocp_version": job.get("ocp_version"),
-                "current_avg_min": entry.get("current_average_duration_minutes"),
-                "previous_avg_min": entry.get("previous_average_duration_minutes"),
-                "current_runs": entry.get("current_runs"),
-                "previous_runs": entry.get("previous_runs"),
-                "pass_pct": entry.get("current_pass_percentage"),
-                "planning_min": int(round(minutes)),
-                "basis": "full-prowjob-wall-clock",
-                "url": sippy_jobs_ui_url(matched_release, matched_name)
-                if matched_release and matched_name
-                else "",
-                "prow_history_name": matched_name or job.get("prow_job_name"),
-            }
-            meta["matched"] += 1
+        if entry and sippy_has_successful_runs(entry):
+            matched_pairs.append((job, entry, how))
+            sample_entries.append(entry)
         else:
             job["duration_hours"] = None
             job["observed_duration_hours"] = None
             job["duration_minutes"] = None
             job["duration_source"] = None
             job["sippy"] = None
+
+    meta["success_samples"] = enrich_sippy_entries_with_success_medians(sample_entries)
+
+    # First pass: Sippy matches backed by successful-run timing.
+    for job, entry, how in matched_pairs:
+        minutes = planning_minutes_from_sippy(entry)
+        if not minutes:
+            job["duration_hours"] = None
+            job["observed_duration_hours"] = None
+            job["duration_minutes"] = None
+            job["duration_source"] = None
+            job["sippy"] = None
+            continue
+        hours = minutes / 60.0
+        hours = min(max(hours, min_hours), max_hours)
+        apply_lease_hold_hours(
+            job, hours, lease_buffer_minutes, max_hours=max_hours
+        )
+        job["duration_source"] = how
+        matched_name = entry.get("name") or ""
+        matched_release = entry.get("release") or ""
+        borrowed = bool(
+            matched_release
+            and job.get("ocp_version")
+            and matched_release != job.get("ocp_version")
+        )
+        success_median = entry.get("success_median_duration_minutes")
+        job["sippy"] = {
+            "name": matched_name,
+            "release": matched_release,
+            "borrowed": borrowed,
+            "job_ocp_version": job.get("ocp_version"),
+            "current_avg_min": entry.get("current_average_duration_minutes"),
+            "previous_avg_min": entry.get("previous_average_duration_minutes"),
+            "success_median_min": (
+                int(round(float(success_median))) if success_median else None
+            ),
+            "current_runs": entry.get("current_runs"),
+            "previous_runs": entry.get("previous_runs"),
+            "current_passes": entry.get("current_passes"),
+            "previous_passes": entry.get("previous_passes"),
+            "pass_pct": entry.get("current_pass_percentage"),
+            "planning_min": int(round(minutes)),
+            "basis": (
+                "successful-prowjob-wall-clock"
+                if success_median
+                else "pass-window-prowjob-wall-clock"
+            ),
+            "url": sippy_jobs_ui_url(matched_release, matched_name)
+            if matched_release and matched_name
+            else "",
+            "prow_history_name": matched_name or job.get("prow_job_name"),
+        }
+        meta["matched"] += 1
 
     def job_kind(job: dict[str, Any]) -> str:
         prow = job.get("prow_job_name") or ""
@@ -1056,9 +1261,8 @@ def enrich_job_durations(
         wf = job.get("workflow") or ""
         if (wf, kind) in wf_medians:
             return wf_medians[(wf, kind)], "workflow-median"
-        timeout_h = parse_timeout_hours(job.get("timeout"))
-        if timeout_h:
-            return timeout_h, "timeout"
+        # No successful Sippy / median sample: use configured default (4h).
+        # Job timeout remains a clamp in apply_lease_hold_hours, not a duration guess.
         return None, ""
 
     # Raise suspiciously short Sippy averages toward the same-job / family floor.
@@ -1077,7 +1281,7 @@ def enrich_job_durations(
             )
             job["duration_source"] = "sippy+median-floor"
 
-    # Second pass: same-job / family / workflow / timeout / default fallbacks
+    # Second pass: same-job / family / workflow / default fallbacks
     for job in jobs:
         if job.get("duration_hours") is not None:
             continue
@@ -1088,10 +1292,7 @@ def enrich_job_durations(
                 job, hours, lease_buffer_minutes, max_hours=max_hours
             )
             job["duration_source"] = how
-            if how.endswith("median"):
-                meta["workflow_fallback"] += 1
-            else:
-                meta["default_fallback"] += 1
+            meta["workflow_fallback"] += 1
         else:
             apply_lease_hold_hours(
                 job, default_hours, lease_buffer_minutes, max_hours=max_hours
@@ -1309,7 +1510,7 @@ def schedule_fingerprint(
         f"duration_default={duration_meta.get('default_hours')}",
         f"sippy_enabled={bool(duration_meta.get('enabled'))}",
         f"lease_buffer_minutes={duration_meta.get('lease_buffer_minutes')}",
-        "duration_basis=full-prowjob-wall-clock",
+        "duration_basis=successful-prowjob-wall-clock",
     ]
     for profile in sorted(lease_map):
         lt = lease_map[profile]
@@ -1396,7 +1597,7 @@ def render_html(
     buf = duration_meta.get("lease_buffer_minutes")
     buf_note = f" + {buf:g}m lease buffer" if buf else ""
     sippy_note = (
-        f"Sippy full job{buf_note}"
+        f"Sippy successful runs{buf_note}"
         if duration_meta.get("enabled")
         else f"fixed {duration_meta.get('default_hours')}h{buf_note}"
     )
@@ -2300,7 +2501,8 @@ function pad2(n) {{
 }}
 
 function formatHourLabel(hour) {{
-  return pad2(hour);
+  if (tz === 'IST') return `${{pad2(hour)}}:30`;
+  return `${{pad2(hour)}}:00`;
 }}
 
 /** Shift a week-minute timestamp by delta minutes, wrapping the 7-day week. */
@@ -2318,7 +2520,7 @@ function utcPartsToIst(dow, hour, minute = 0) {{
   }};
 }}
 
-/** Convert IST day-index + hour → UTC day-index + hour that owns that IST hour start. */
+/** Convert IST day-index + hour(+minute) → UTC day-index + clock. */
 function istPartsToUtc(dow, hour, minute = 0) {{
   const total = wrapWeekMinutes(dow * 24 * 60 + hour * 60 + minute - IST_OFFSET_MIN);
   return {{
@@ -2328,10 +2530,15 @@ function istPartsToUtc(dow, hour, minute = 0) {{
   }};
 }}
 
-/** Heatmap lookup: display (d,h) in active tz → underlying UTC demand indices. */
+/**
+ * Heatmap lookup: display (d,h) in active tz → underlying UTC demand indices.
+ *
+ * IST columns are labeled HH:30 because each UTC hour bucket starts at :30 IST
+ * (UTC+05:30). That keeps a 1:1 map with free-window labels from formatSlot.
+ */
 function displayToUtc(d, h) {{
   if (tz === 'UTC') return {{ dow: d, hour: h }};
-  const u = istPartsToUtc(d, h, 0);
+  const u = istPartsToUtc(d, h, 30); // column h means h:30 IST == some UTC hour :00
   return {{ dow: u.dow, hour: u.hour }};
 }}
 
@@ -2348,7 +2555,7 @@ function formatDisplaySlot(d, h) {{
   // Input is the heatmap display coordinate in the active timezone.
   const day = DATA.day_names[d];
   if (tz === 'UTC') return `${{day}} ${{pad2(h)}}:00 UTC`;
-  return `${{day}} ${{pad2(h)}}:00 IST`;
+  return `${{day}} ${{pad2(h)}}:30 IST`;
 }}
 
 function formatJobStart(startStr) {{
@@ -2384,6 +2591,11 @@ function formatCronEnglish(text) {{
     const ist = utcPartsToIst(0, Number(hh), Number(mm));
     return `${{pad2(ist.hour)}}:${{pad2(ist.minute)}} IST`;
   }});
+  // "every hour at :00 UTC" → ":30 IST"
+  out = out.replace(/:(\d{{2}}) UTC\b/g, (full, mm) => {{
+    const ist = utcPartsToIst(0, 0, Number(mm));
+    return `:${{pad2(ist.minute)}} IST`;
+  }});
   return out.replace(/\bUTC\b/g, 'IST');
 }}
 
@@ -2393,8 +2605,8 @@ function durationPill(j) {{
   const sippy = j.sippy || {{}};
   if (source.startsWith('sippy')) {{
     const from = sippy.borrowed && sippy.release
-      ? `Duration from same job on OCP ${{sippy.release}} (this version has no Sippy history)`
-      : 'Duration from Sippy full ProwJob average (label only — use Links → sippy/prow for history)';
+      ? `Duration from successful runs of the same job on OCP ${{sippy.release}} (this version has no passes yet)`
+      : 'Duration from successful Sippy ProwJob runs (fail-only averages ignored; label only — use Links → sippy/prow for history)';
     const label = sippy.borrowed && sippy.release ? `sippy·${{sippy.release}}` : 'sippy';
     return `<span class="pill sippy" title="${{from}}">${{label}}</span>`;
   }}
@@ -2507,7 +2719,7 @@ function showCell(p, d, h) {{
   el.style.display = 'block';
   el.innerHTML = `<h3>${{formatDisplaySlot(d, h)}} — ${{inUse}} lease(s) in use · ${{available}} available (capacity ${{p.capacity}})</h3>` +
     (jobs.length ? `<ul>${{jobs.map(j =>
-      `<li><code>${{j.as}}</code> · OCP ${{j.ocp_version}} · starts ${{formatJobStart(j.start)}} · lease hold ${{j.duration_hours}}h${{j.observed_duration_hours != null && j.observed_duration_hours !== j.duration_hours ? ` (observed ${{j.observed_duration_hours}}h)` : ''}} ${{durationPill(j)}} · <span class="mono">${{j.workflow || ''}}</span></li>`
+      `<li><code>${{j.as}}</code> · OCP ${{j.ocp_version}} · starts ${{formatJobStart(j.start)}} · holds ${{j.leases_held != null ? j.leases_held : 1}} lease(s) · lease hold ${{j.duration_hours}}h${{j.observed_duration_hours != null && j.observed_duration_hours !== j.duration_hours ? ` (observed ${{j.observed_duration_hours}}h)` : ''}} ${{durationPill(j)}} · <span class="mono">${{j.workflow || ''}}</span></li>`
     ).join('')}}</ul>` : '<p style="color:var(--muted)">No overlapping weekly/daily jobs — all leases available this hour.</p>');
 }}
 
@@ -2830,7 +3042,7 @@ def main() -> int:
     print(f"\nWrote report to {out_dir}")
     print(f"Fingerprint: {fingerprint}")
     print(
-        f"Duration model: full ProwJob wall-clock | "
+        f"Duration model: successful ProwJob wall-clock | "
         f"sippy={'on' if args.fetch_sippy_durations else 'off'} "
         f"| fallback={args.duration_hours}h | buffer={args.lease_buffer_minutes:g}m | jobs={len(jobs)}"
     )
