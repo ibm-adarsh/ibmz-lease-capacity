@@ -1491,6 +1491,133 @@ def contiguous_free_blocks(
     return full_week_fallback
 
 
+def window_feasible(
+    demand: list[list[int]],
+    capacity: int,
+    start_idx: int,
+    duration_hours: int,
+    leases_needed: int,
+    min_free_pct: float = 50.0,
+) -> bool:
+    """True iff for every hour in [start, start+dur): existing + need <= capacity - ceil(cap*pct/100)."""
+    n = 7 * 24
+    dur = max(1, int(duration_hours))
+    need = max(1, int(leases_needed))
+    min_free = max(0, int((capacity * min_free_pct + 99) // 100)) if capacity else 0
+    limit = capacity - min_free
+    if need > limit:
+        return False
+    for k in range(dur):
+        idx = (start_idx + k) % n
+        d, h = divmod(idx, 24)
+        if demand[d][h] + need > limit:
+            return False
+    return True
+
+
+def find_start_slots(
+    demand: list[list[int]],
+    capacity: int,
+    duration_hours: int,
+    leases_needed: int = 1,
+    min_free_pct: float = 50.0,
+) -> list[dict[str, Any]]:
+    """Enumerate weekly hour starts where a new job can hold for the full duration."""
+    n = 7 * 24
+    slots: list[dict[str, Any]] = []
+    for i in range(n):
+        if not window_feasible(
+            demand, capacity, i, duration_hours, leases_needed, min_free_pct
+        ):
+            continue
+        d, h = divmod(i, 24)
+        slots.append({"dow": d, "hour": h, "index": i})
+    return slots
+
+
+def find_maintenance_candidates(
+    demand: list[list[int]],
+    capacity: int,
+    details: list[list[list[dict[str, Any]]]] | None = None,
+    duration_hours: int = 2,
+    min_free_pct: float = 50.0,
+    weekdays: tuple[int, ...] = (1, 2, 3, 4, 5),  # Mon–Fri
+    limit: int = 4,
+) -> list[dict[str, Any]]:
+    """Recommend weekday maintenance windows (planning only — not reserved)."""
+    n = 7 * 24
+    dur = max(1, int(duration_hours))
+    min_free = max(0, int((capacity * min_free_pct + 99) // 100)) if capacity else 0
+    candidates: list[dict[str, Any]] = []
+    for i in range(n):
+        d, h = divmod(i, 24)
+        if d not in weekdays:
+            continue
+        end_idx = i + dur
+        if end_idx > n:
+            continue
+        # Entire window must stay on allowed weekdays.
+        if any((divmod(i + k, 24)[0] not in weekdays) for k in range(dur)):
+            continue
+        peak = 0
+        min_sp = capacity
+        ok = True
+        for k in range(dur):
+            dd, hh = divmod(i + k, 24)
+            dem = demand[dd][hh]
+            sp = capacity - dem
+            peak = max(peak, dem)
+            min_sp = min(min_sp, sp)
+            if sp < min_free:
+                ok = False
+                break
+        if not ok:
+            continue
+        end_d, end_h = divmod(end_idx % n, 24)
+        conflicts: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        if details is not None:
+            for k in range(dur):
+                dd, hh = divmod(i + k, 24)
+                for j in details[dd][hh]:
+                    key = f"{j.get('as')}|{j.get('start')}|{j.get('ocp_version')}|{j.get('workflow')}"
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    conflicts.append(
+                        {
+                            "as": j.get("as"),
+                            "start": j.get("start"),
+                            "ocp_version": j.get("ocp_version"),
+                            "leases_held": j.get("leases_held") or 1,
+                        }
+                    )
+        status = "Conflict" if conflicts else "Recommended"
+        candidates.append(
+            {
+                "dow": d,
+                "start_hour": h,
+                "end_dow": end_d,
+                "end_hour": end_h,
+                "hours": dur,
+                "peak_demand": peak,
+                "min_spare": min_sp,
+                "conflicts": conflicts,
+                "status": status,
+            }
+        )
+    candidates.sort(
+        key=lambda c: (
+            0 if c["status"] == "Recommended" else 1,
+            -c["min_spare"],
+            c["peak_demand"],
+            c["dow"],
+            c["start_hour"],
+        )
+    )
+    return candidates[:limit]
+
+
 def workflow_summary(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for job in jobs:
@@ -2226,6 +2353,34 @@ ul.slots li:last-child {{ border-bottom: 0; }}
   border-color: rgba(241, 194, 27, 0.65);
   color: #f5d76e;
 }}
+.badge.overcommit {{
+  background: color-mix(in srgb, var(--bad-bg) 85%, var(--panel));
+  border-color: color-mix(in srgb, var(--bad) 45%, var(--border));
+  color: var(--bad-text, #a51919);
+}}
+[data-theme="dark"] .badge.overcommit {{
+  background: rgba(218, 30, 40, 0.22);
+  border-color: rgba(255, 131, 137, 0.65);
+  color: #ffb3b8;
+}}
+.badge.ok-status {{
+  background: color-mix(in srgb, var(--ok-bg) 85%, var(--panel));
+  border-color: color-mix(in srgb, var(--ok) 45%, var(--border));
+  color: var(--ok-text);
+}}
+.planner-controls {{
+  display: flex; flex-wrap: wrap; gap: 0.65rem; margin: 0.35rem 0 0.75rem;
+  font-size: 0.82rem; color: var(--muted);
+}}
+.planner-controls label {{ display: flex; align-items: center; gap: 0.35rem; }}
+.planner-controls input {{
+  width: 4.2rem; background: var(--bg-elevated); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 0.35rem 0.45rem; font: 600 0.84rem/1.2 var(--font);
+}}
+.planner-summary {{
+  margin: 0 0 0.55rem; font-size: 0.84rem; color: var(--text-secondary);
+}}
 .filters {{ display: flex; flex-wrap: wrap; gap: 0.55rem; margin-bottom: 0.85rem; }}
 .filters input, .filters select {{
   background: var(--bg-elevated); color: var(--text); border: 1px solid var(--border);
@@ -2383,8 +2538,11 @@ table.jobs tbody tr:hover, table.wf tbody tr:hover {{ background: var(--accent-s
     </div>
     <p class="panel-lead">
       A lease is taken when the job <strong>starts</strong> and stays busy through
-      <strong>pre → test → post</strong>. Example: capacity <code>10</code> and one <code>3h</code> hold
-      leaves <code>9</code> leases free for those 3 hours. Heatmap cells show <strong>leases in use</strong>.
+      <strong>pre → test → post</strong> (planned schedule, not live Boskos).
+      Hold intervals are half-open <code>[start, end)</code>.
+      Example: capacity <code>10</code> and one <code>3h</code> hold leaves <code>9</code> leases free for those 3 hours.
+      Each heatmap cell sums <code>leases_held</code> for every job whose hold intersects that hour bin
+      (occupancy-if-any-overlap — conservative vs true minute-level peak).
     </p>
   </section>
   <section class="panel">
@@ -2392,11 +2550,11 @@ table.jobs tbody tr:hover, table.wf tbody tr:hover {{ background: var(--accent-s
       <p class="eyebrow">Weekly view</p>
       <h2>Concurrency heatmap</h2>
       <p class="panel-lead">
-        Each cell is concurrent leases in use during that hour
+        Each cell is planned lease demand for hour bin <code>[H:00, H+1:00)</code>
         (most jobs hold 1 lease; some workflows hold more of the same type).
         Hold time = full job wall-clock (pre/test/post) + lease buffer.
         Toggle <strong>IST</strong> to remap columns, cell details, and job start times from cron UTC (+05:30).
-        Click a cell for details.
+        Click a cell for details. Overcommit (demand &gt; capacity) is shown, never silently clamped.
       </p>
     </div>
     <div class="heatmap-wrap">
@@ -2415,7 +2573,7 @@ table.jobs tbody tr:hover, table.wf tbody tr:hover {{ background: var(--accent-s
       <div class="slot-block-head">
         <p class="eyebrow">Scheduling</p>
         <h2>Best free windows</h2>
-        <p class="panel-lead">Quiet multi-hour stretches with ≥50% of leases free — safest places to add jobs.</p>
+        <p class="panel-lead">Quiet multi-hour stretches with ≥50% of leases free. End times are <strong>exclusive</strong>. Sunday→Saturday order.</p>
       </div>
       <div class="slot-scroll">
         <ul class="slots" id="free-blocks"></ul>
@@ -2426,7 +2584,7 @@ table.jobs tbody tr:hover, table.wf tbody tr:hover {{ background: var(--accent-s
       <div class="slot-block-head">
         <p class="eyebrow">Scheduling</p>
         <h2>Top free hours</h2>
-        <p class="panel-lead">Hours with the most leases still available.</p>
+        <p class="panel-lead">Hours with the most leases still available (available = capacity − in use).</p>
       </div>
       <div class="slot-scroll">
         <ul class="slots" id="free-slots"></ul>
@@ -2437,12 +2595,46 @@ table.jobs tbody tr:hover, table.wf tbody tr:hover {{ background: var(--accent-s
       <div class="slot-block-head">
         <p class="eyebrow">Pressure</p>
         <h2>Busiest hours</h2>
-        <p class="panel-lead">Hours with the highest lease occupancy.</p>
+        <p class="panel-lead">Hours with the highest planned lease demand (same grid as the heatmap).</p>
       </div>
       <div class="slot-scroll">
         <ul class="slots" id="busy-slots"></ul>
       </div>
       <div class="slot-foot"><span class="chev">↓</span> Scroll for more busy hours</div>
+    </section>
+  </div>
+  <div class="cols">
+    <section class="slot-block free" aria-label="Duration-aware start finder">
+      <div class="slot-block-head">
+        <p class="eyebrow">Planning</p>
+        <h2>Fit a new job</h2>
+        <p class="panel-lead">Find hourly starts where a new job can hold its leases for the full duration while keeping ≥N% free (active TZ). Planning only.</p>
+      </div>
+      <div class="planner-controls">
+        <label>Leases <input type="number" id="plan-leases" min="1" max="20" value="1"></label>
+        <label>Duration (h) <input type="number" id="plan-duration" min="1" max="48" value="4"></label>
+        <label>Min free % <input type="number" id="plan-free-pct" min="0" max="100" value="50"></label>
+      </div>
+      <p class="planner-summary" id="plan-summary"></p>
+      <div class="slot-scroll">
+        <ul class="slots" id="plan-slots"></ul>
+      </div>
+      <div class="slot-foot"><span class="chev">↓</span> Scroll for more start slots</div>
+    </section>
+    <section class="slot-block hours" aria-label="Recommended maintenance windows">
+      <div class="slot-block-head">
+        <p class="eyebrow">Maintenance</p>
+        <h2>Recommended windows</h2>
+        <p class="panel-lead">Weekday (Mon–Fri) stretches for security patching. Status is <strong>Recommended</strong> or <strong>Conflict</strong> — never reserved/enforced.</p>
+      </div>
+      <div class="planner-controls">
+        <label>Duration (h) <input type="number" id="maint-duration" min="1" max="8" value="2"></label>
+        <label>Min free % <input type="number" id="maint-free-pct" min="0" max="100" value="50"></label>
+      </div>
+      <div class="slot-scroll">
+        <ul class="slots" id="maint-slots"></ul>
+      </div>
+      <div class="slot-foot"><span class="chev">↓</span> Scroll for more candidates</div>
     </section>
   </div>
   <section class="panel">
@@ -2936,7 +3128,7 @@ function renderMetrics(p) {{
   const minAvail = Math.max(0, p.capacity - stats.peak);
   const items = [
     ['Total leases', p.capacity, 'How many machines/leases this profile can run at once.'],
-    ['Busiest moment', stats.peak, 'Most leases in use at the same time in a normal week' + (tz === 'IST' ? ' (IST hour bins).' : '.')],
+    ['Peak hour demand', stats.peak, 'Highest occupancy-if-any-overlap in any hour bin (planned schedule)' + (tz === 'IST' ? ' (IST).' : '.')],
     ['Still free at peak', minAvail, 'Leases left even during the busiest hour (capacity − peak).'],
     ['All jobs', p.job_count, 'Total periodic jobs configured on this profile.'],
     ['Weekly jobs', p.weekly_job_count, 'Jobs that run every week/day and appear in the heatmap.'],
@@ -3107,6 +3299,112 @@ function bestDisplayFreeBlocks(grid, capacity) {{
     .slice(0, 16);
 }}
 
+function windowFeasible(grid, capacity, startIdx, durationHours, leasesNeeded, minFreePct) {{
+  const n = 7 * 24;
+  const dur = Math.max(1, Number(durationHours) || 1);
+  const need = Math.max(1, Number(leasesNeeded) || 1);
+  const minFree = capacity > 0 ? Math.max(0, Math.ceil(capacity * (Number(minFreePct) || 0) / 100)) : 0;
+  const limit = capacity - minFree;
+  if (need > limit) return false;
+  for (let k = 0; k < dur; k++) {{
+    const idx = (startIdx + k) % n;
+    const d = Math.floor(idx / 24), h = idx % 24;
+    if (grid[d][h] + need > limit) return false;
+  }}
+  return true;
+}}
+
+function findStartSlots(grid, capacity, durationHours, leasesNeeded, minFreePct) {{
+  const n = 7 * 24;
+  const slots = [];
+  for (let i = 0; i < n; i++) {{
+    if (!windowFeasible(grid, capacity, i, durationHours, leasesNeeded, minFreePct)) continue;
+    slots.push({{ dow: Math.floor(i / 24), hour: i % 24, index: i }});
+  }}
+  return slots;
+}}
+
+function findMaintenanceCandidates(grid, capacity, durationHours, minFreePct, detailsByHour) {{
+  const n = 7 * 24;
+  const dur = Math.max(1, Number(durationHours) || 2);
+  const minFree = capacity > 0 ? Math.max(0, Math.ceil(capacity * (Number(minFreePct) || 0) / 100)) : 0;
+  const weekdays = new Set([1, 2, 3, 4, 5]);
+  const candidates = [];
+  for (let i = 0; i < n; i++) {{
+    const d = Math.floor(i / 24), h = i % 24;
+    if (!weekdays.has(d)) continue;
+    if (i + dur > n) continue;
+    let ok = true, peak = 0, minSp = capacity;
+    for (let k = 0; k < dur; k++) {{
+      const dd = Math.floor((i + k) / 24);
+      if (!weekdays.has(dd)) {{ ok = false; break; }}
+      const hh = (i + k) % 24;
+      const dem = grid[dd][hh];
+      const sp = capacity - dem;
+      peak = Math.max(peak, dem);
+      minSp = Math.min(minSp, sp);
+      if (sp < minFree) {{ ok = false; break; }}
+    }}
+    if (!ok) continue;
+    const endIdx = i + dur;
+    const conflicts = [];
+    const seen = new Set();
+    if (detailsByHour) {{
+      for (let k = 0; k < dur; k++) {{
+        const dd = Math.floor((i + k) / 24), hh = (i + k) % 24;
+        for (const j of (detailsByHour[dd][hh] || [])) {{
+          const key = (j.as || '') + '|' + (j.start || '') + '|' + (j.ocp_version || '') + '|' + (j.workflow || '');
+          if (seen.has(key)) continue;
+          seen.add(key);
+          conflicts.push(j);
+        }}
+      }}
+    }}
+    candidates.push({{
+      dow: d,
+      start_hour: h,
+      end_dow: Math.floor(endIdx / 24) % 7,
+      end_hour: endIdx % 24,
+      hours: dur,
+      peak_demand: peak,
+      min_spare: minSp,
+      conflicts,
+      status: conflicts.length ? 'Conflict' : 'Recommended',
+    }});
+  }}
+  candidates.sort((a, b) =>
+    (a.status === 'Recommended' ? 0 : 1) - (b.status === 'Recommended' ? 0 : 1)
+    || b.min_spare - a.min_spare
+    || a.peak_demand - b.peak_demand
+    || a.dow - b.dow
+    || a.start_hour - b.start_hour
+  );
+  return candidates.slice(0, 8);
+}}
+
+function buildDisplayDetailsGrid(p) {{
+  // Hour-bin job lists in the active timezone (UTC buckets or IST remapped).
+  const grid = Array.from({{ length: 7 }}, () => Array.from({{ length: 24 }}, () => []));
+  for (let d = 0; d < 7; d++) {{
+    for (let h = 0; h < 24; h++) grid[d][h] = jobsForDisplayHour(p, d, h);
+  }}
+  return grid;
+}}
+
+function spareBadge(demand, spare, capacity) {{
+  if (spare < 0 || demand > capacity) {{
+    return `<span class="badge overcommit">${{demand}} in use · overcommit ${{Math.abs(spare)}}</span>`;
+  }}
+  return `<span class="badge">${{demand}} in use · ${{spare}} available</span>`;
+}}
+
+function busyBadge(demand, spare, capacity) {{
+  if (spare < 0 || demand > capacity) {{
+    return `<span class="badge overcommit">${{demand}} in use / ${{capacity}} · overcommit ${{Math.abs(spare)}}</span>`;
+  }}
+  return `<span class="badge busy">${{demand}} in use / ${{capacity}} · ${{spare}} free</span>`;
+}}
+
 function renderSlots(p) {{
   const blocksEl = document.getElementById('free-blocks');
   const freeEl = document.getElementById('free-slots');
@@ -3115,16 +3413,53 @@ function renderSlots(p) {{
   const grid = buildDisplayDemandGrid(p);
   const ranked = rankDisplaySlots(grid, p.capacity);
   const blocks = bestDisplayFreeBlocks(grid, p.capacity);
-  blocksEl.innerHTML = blocks.map(b =>
-    `<li><span>${{formatDisplaySlot(b.dow, b.start_hour)}} → ${{formatDisplaySlot(b.end_dow, b.end_hour)}} (${{b.hours}}h)</span><span class="badge">≥${{b.min_spare}} leases free</span></li>`
-  ).join('') || '<li style="color:var(--muted)">No multi-hour free windows under current model.</li>';
+  const preferred = schedulingMinSpare(p.capacity);
+  blocksEl.innerHTML = blocks.map(b => {{
+    const maxInUse = p.capacity - b.min_spare;
+    return `<li><span>${{formatDisplaySlot(b.dow, b.start_hour)}} → ${{formatDisplaySlot(b.end_dow, b.end_hour)}} exclusive (${{b.hours}}h)</span><span class="badge">≥${{b.min_spare}} free · max ${{maxInUse}} in use · ≥${{preferred}} free bar</span></li>`;
+  }}).join('') || '<li style="color:var(--muted)">No multi-hour free windows under current model.</li>';
   freeEl.innerHTML = ranked.free.slice(0, 48).map(c =>
-    `<li><span>${{formatDisplaySlot(c.dow, c.hour)}}</span><span class="badge">${{c.demand}} in use · ${{c.spare}} available</span></li>`
+    `<li><span>${{formatDisplaySlot(c.dow, c.hour)}}</span>${{spareBadge(c.demand, c.spare, c.capacity)}}</li>`
   ).join('') || '<li style="color:var(--muted)">No free capacity under current model.</li>';
   busyEl.innerHTML = ranked.busiest.slice(0, 48).map(c =>
-    `<li><span>${{formatDisplaySlot(c.dow, c.hour)}}</span><span class="badge busy">${{c.demand}} in use / ${{c.capacity}} · ${{c.spare}} free</span></li>`
+    `<li><span>${{formatDisplaySlot(c.dow, c.hour)}}</span>${{busyBadge(c.demand, c.spare, c.capacity)}}</li>`
   ).join('');
   [blocksEl, freeEl, busyEl].forEach(wireSlotScroll);
+  renderPlanner(p, grid);
+  renderMaintenance(p, grid);
+}}
+
+function renderPlanner(p, grid) {{
+  const leases = Math.max(1, Number(document.getElementById('plan-leases').value) || 1);
+  const duration = Math.max(1, Number(document.getElementById('plan-duration').value) || 1);
+  const freePct = Math.max(0, Number(document.getElementById('plan-free-pct').value) || 0);
+  const slots = findStartSlots(grid, p.capacity, duration, leases, freePct);
+  const byDay = Array(7).fill(0);
+  slots.forEach(s => {{ byDay[s.dow] += 1; }});
+  const dayBits = DATA.day_names.map((name, i) => `${{name.slice(0,3)}} ${{byDay[i]}}`).join(' · ');
+  document.getElementById('plan-summary').textContent =
+    `${{slots.length}} valid start hours in ${{tz}} (need ${{leases}} lease(s) for ${{duration}}h, keep ≥${{freePct}}% free). ${{dayBits}}`;
+  const list = document.getElementById('plan-slots');
+  list.innerHTML = slots.slice(0, 48).map(s =>
+    `<li><span>Start ${{formatDisplaySlot(s.dow, s.hour)}}</span><span class="badge">holds through ${{formatDisplaySlot((s.dow + Math.floor((s.hour + duration) / 24)) % 7, (s.hour + duration) % 24)}} exclusive</span></li>`
+  ).join('') || '<li style="color:var(--muted)">No valid start hours for these constraints.</li>';
+  wireSlotScroll(list);
+}}
+
+function renderMaintenance(p, grid) {{
+  const duration = Math.max(1, Number(document.getElementById('maint-duration').value) || 2);
+  const freePct = Math.max(0, Number(document.getElementById('maint-free-pct').value) || 50);
+  const details = buildDisplayDetailsGrid(p);
+  const cands = findMaintenanceCandidates(grid, p.capacity, duration, freePct, details);
+  const list = document.getElementById('maint-slots');
+  list.innerHTML = cands.map(c => {{
+    const statusClass = c.status === 'Recommended' ? 'ok-status' : 'busy';
+    const conflictNote = c.conflicts.length
+      ? ` · ${{c.conflicts.length}} overlapping job(s)`
+      : ' · no overlapping weekly jobs';
+    return `<li><span>${{formatDisplaySlot(c.dow, c.start_hour)}} → ${{formatDisplaySlot(c.end_dow, c.end_hour)}} exclusive (${{c.hours}}h)${{conflictNote}}</span><span class="badge ${{statusClass}}">${{c.status}} · peak ${{c.peak_demand}} · ≥${{c.min_spare}} free</span></li>`;
+  }}).join('') || '<li style="color:var(--muted)">No Mon–Fri maintenance candidates under these constraints.</li>';
+  wireSlotScroll(list);
 }}
 
 function renderWorkflows(p) {{
@@ -3199,6 +3534,13 @@ function renderAll() {{
 ['filter-text','filter-version','filter-class','filter-duration'].forEach(id => {{
   document.getElementById(id).addEventListener('input', () => renderJobs(DATA.profiles[active]));
   document.getElementById(id).addEventListener('change', () => renderJobs(DATA.profiles[active]));
+}});
+
+['plan-leases','plan-duration','plan-free-pct','maint-duration','maint-free-pct'].forEach(id => {{
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener('input', () => renderSlots(DATA.profiles[active]));
+  el.addEventListener('change', () => renderSlots(DATA.profiles[active]));
 }});
 
 renderAll();
