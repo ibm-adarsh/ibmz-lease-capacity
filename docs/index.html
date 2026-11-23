@@ -946,12 +946,12 @@ function utcHoursOverlappingIstHour(d, h) {
 
 function displayDemand(p, d, h) {
   if (tz === 'UTC') return p.demand[d][h] || 0;
-  // Peak concurrency anywhere inside the IST hour (covers start x:05–59 → hour x).
-  let peak = 0;
-  for (const u of utcHoursOverlappingIstHour(d, h)) {
-    peak = Math.max(peak, p.demand[u.dow][u.hour] || 0);
-  }
-  return peak;
+  // Must match jobsForDisplayHour: never paint green from a UTC hour bucket
+  // that only partially overlaps this IST hour when the job itself does not.
+  // Example bug: job 00:40 UTC (=06:10 IST) paints UTC hour 0; IST 05:00–06:00
+  // overlaps UTC 23:30–00:30 so max(UTC0) was 1 while no job overlaps 05:xx IST.
+  const jobs = jobsForDisplayHour(p, d, h);
+  return jobs.reduce((sum, j) => sum + (j.leases_held != null ? j.leases_held : 1), 0);
 }
 
 function parseJobStartUtc(startStr) {
