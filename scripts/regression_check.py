@@ -144,11 +144,17 @@ def check_ist_heatmap_mapping(c: Checker) -> None:
         "1.5h hold from 10:30 IST still overlaps IST column 11",
     )
 
-    # End exactly at next hour boundary should not require the following column
-    # 10:30 + 90m = 12:00 IST → columns 10 and 11 only.
+    # 00:40 UTC = 06:10 IST: UTC hour 0 overlaps IST 05, but the job must NOT
+    # count for IST column 05 (starts after 06:00 IST).
+    d, h, m = utc_to_ist(2, 0, 40)
+    c.check((h, m) == (6, 10), f"Tue 00:40 UTC should be 06:10 IST, got {h}:{m}")
     c.check(
-        (2, 6) in utc_hours_for_ist_hour(2, 11),
-        "UTC hour 6 (11:30–12:30 IST) feeds IST column 11",
+        (2, 0) in utc_hours_for_ist_hour(2, 5),
+        "UTC hour 0 overlaps IST 05 window (partial) — demand must still filter by real overlap",
+    )
+    c.check(
+        (2, 0) in utc_hours_for_ist_hour(2, 6),
+        "00:40 UTC start belongs under IST column 06",
     )
 
 
