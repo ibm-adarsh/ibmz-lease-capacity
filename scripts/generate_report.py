@@ -74,7 +74,7 @@ MONTH_NAMES = [
     "Nov",
     "Dec",
 ]
-RELEASE_BLOB_BASE = "https://github.com/openshift/release/blob/master"
+RELEASE_BLOB_BASE = "https://github.com/openshift/release/blob/main"
 SIPPY_API = "https://sippy.dptools.openshift.org"
 PROW_HISTORY_BASE = "https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs"
 SIPPY_JOB_URL = "https://sippy.dptools.openshift.org/sippy-ng/jobs"
