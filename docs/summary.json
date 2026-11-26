@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-25 11:35:37 UTC \u00b7 2026-11-25 17:05:37 IST",
+  "generated_at": "2026-11-26 05:17:56 UTC \u00b7 2026-11-26 10:47:56 IST",
   "duration_meta": {
     "enabled": true,
     "default_hours": 4.0,
@@ -23,15 +23,15 @@
       "5.2"
     ],
     "errors": [],
-    "matched": 111,
-    "success_samples": 33,
+    "matched": 113,
+    "success_samples": 32,
     "workflow_fallback": 22,
     "default_fallback": 3,
     "workflow_medians_hours": {
       "hypershift-mce-ibmz-conformance-hcpmulti-kubevirt|install": 4.5,
       "hypershift-mce-ibmz-conformance-s390xmgmt-kubevirt-oz|install": 4.0,
-      "kueue-operator-libvirt-s390x|install": 2.12,
-      "openshift-e2e-libvirt-heterogeneous-vpn|install": 3.25,
+      "kueue-operator-libvirt-s390x|install": 2.25,
+      "openshift-e2e-libvirt-heterogeneous-vpn|install": 3.0,
       "openshift-e2e-libvirt-upi|install": 3.0,
       "openshift-e2e-libvirt-vpn|install": 2.38,
       "openshift-e2e-libvirt-vpn|upgrade": 2.12,
@@ -46,7 +46,7 @@
       "ocp-e2e-ovn-agent-remote-libvirt-multi-z-z|install": 3.0,
       "ocp-e2e-ovn-remote-libvirt-multi-z-z|install": 2.25,
       "ocp-e2e-ovn-remote-libvirt-multi-z-za|install": 3.25,
-      "ocp-e2e-ovn-remote-libvirt-multi-z-zx|install": 3.25,
+      "ocp-e2e-ovn-remote-libvirt-multi-z-zx|install": 3.0,
       "ocp-e2e-ovn-remote-libvirt-s390x|install": 2.25,
       "ocp-e2e-serial-ovn-remote-libvirt-multi-z-z|install": 3.12,
       "ocp-e2e-serial-ovn-techpreview-remote-libvirt-multi-z-z|install": 3.25,
@@ -56,17 +56,17 @@
       "ocp-fips-ovn-techpreview-remote-libvirt-multi-z-z|install": 3.5,
       "ocp-image-ecosystem-ovn-remote-libvirt-multi-z-z|install": 1.5,
       "ocp-ovn-remote-libvirt-s390x|upgrade": 2.12,
-      "test-e2e-4-22-downstream|install": 2.62,
-      "test-e2e-4-22-upstream|install": 1.75
+      "test-e2e-4-22-downstream|install": 2.75,
+      "test-e2e-4-22-upstream|install": 1.62
     }
   },
-  "fingerprint": "599133e8308faef93c91ab39dc9876451309c879fda835f86a30609ea2cc4605",
+  "fingerprint": "a6c78f527fce5082ca3421094e080c168c60dc49f52eb89eed3c639fd76ccac7",
   "source": {
-    "sha": "9a45afe0ddc3df8596b892d312bf7856e3d29d09",
-    "short_sha": "9a45afe0ddc3",
-    "subject": "ci(openperouter): add upstream merge sync (#87681)",
-    "committed_at": "2026-11-25T11:24:19Z",
-    "source_url": "https://github.com/openshift/release/commit/9a45afe0ddc3df8596b892d312bf7856e3d29d09"
+    "sha": "cd081c5d831dd46df0f9a453dc71874d3a37b62a",
+    "short_sha": "cd081c5d831d",
+    "subject": "ROSAENG-66391: add zero-egress e2e workflow and staging periodic (#89115)",
+    "committed_at": "2026-11-26T03:49:27Z",
+    "source_url": "https://github.com/openshift/release/commit/cd081c5d831dd46df0f9a453dc71874d3a37b62a"
   },
   "workflows": [
     {
@@ -89,13 +89,13 @@
     },
     {
       "workflow": "openshift-e2e-libvirt-heterogeneous-vpn",
-      "jobs": 7,
+      "jobs": 9,
       "profiles": [
         "libvirt-s390x-vpn-amd64",
         "libvirt-s390x-vpn-arm64"
       ],
-      "median_duration_hours": 3.5,
-      "sippy_matched": 7
+      "median_duration_hours": 3.25,
+      "sippy_matched": 9
     },
     {
       "workflow": "kueue-operator-libvirt-s390x",
@@ -103,7 +103,7 @@
       "profiles": [
         "libvirt-s390x-vpn-oz"
       ],
-      "median_duration_hours": 2.38,
+      "median_duration_hours": 2.5,
       "sippy_matched": 4
     },
     {
@@ -509,12 +509,12 @@
         "libvirt-s390x-vpn-amd64-0-1"
       ],
       "capacity": 2,
-      "job_count": 7,
-      "weekly_job_count": 5,
-      "low_frequency_job_count": 2,
+      "job_count": 9,
+      "weekly_job_count": 6,
+      "low_frequency_job_count": 3,
       "peak_demand": 2,
       "overcommit_hours": 0,
-      "median_duration_hours": 3.5,
+      "median_duration_hours": 3.25,
       "sippy_coverage": 1.0,
       "top_free_blocks": [
         {
@@ -545,7 +545,7 @@
           "end_day": "Wed",
           "end_hour": 5,
           "hours": 19,
-          "min_spare": 2
+          "min_spare": 1
         },
         {
           "day": "Wed",
@@ -575,7 +575,7 @@
           "end_day": "Sat",
           "end_hour": 5,
           "hours": 19,
-          "min_spare": 2
+          "min_spare": 1
         },
         {
           "day": "Sat",
@@ -826,7 +826,7 @@
         {
           "day": "Tue",
           "dow": 2,
-          "hour": 4,
+          "hour": 5,
           "demand": 2,
           "capacity": 2,
           "spare": 0
@@ -1745,7 +1745,7 @@
       "low_frequency_job_count": 0,
       "peak_demand": 4,
       "overcommit_hours": 0,
-      "median_duration_hours": 2.38,
+      "median_duration_hours": 2.5,
       "sippy_coverage": 1.0,
       "top_free_blocks": [
         {
