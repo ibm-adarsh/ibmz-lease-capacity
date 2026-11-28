@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-27 11:13:57 UTC \u00b7 2026-11-27 16:43:57 IST",
+  "generated_at": "2026-11-28 10:44:40 UTC \u00b7 2026-11-28 16:14:40 IST",
   "duration_meta": {
     "enabled": true,
     "default_hours": 4.0,
@@ -24,7 +24,7 @@
     ],
     "errors": [],
     "matched": 117,
-    "success_samples": 21,
+    "success_samples": 27,
     "workflow_fallback": 22,
     "default_fallback": 3,
     "workflow_medians_hours": {
@@ -35,7 +35,7 @@
       "openshift-e2e-libvirt-upi|install": 3.0,
       "openshift-e2e-libvirt-vpn|install": 2.38,
       "openshift-e2e-libvirt-vpn|upgrade": 2.25,
-      "openshift-e2e-libvirt-vpn-fips|install": 2.75
+      "openshift-e2e-libvirt-vpn-fips|install": 3.0
     },
     "as_medians_hours": {
       "e2e-agent-ibmz-sno|install": 1.25,
@@ -50,23 +50,23 @@
       "ocp-e2e-ovn-remote-libvirt-s390x|install": 2.25,
       "ocp-e2e-serial-ovn-remote-libvirt-multi-z-z|install": 3.12,
       "ocp-e2e-serial-ovn-techpreview-remote-libvirt-multi-z-z|install": 3.25,
-      "ocp-fips-ovn-remote-libvirt-multi-z-z|install": 2.88,
+      "ocp-fips-ovn-remote-libvirt-multi-z-z|install": 3.0,
       "ocp-fips-ovn-remote-libvirt-s390x|install": 2.0,
       "ocp-fips-ovn-techpreview-multi-z-z|install": 3.5,
-      "ocp-fips-ovn-techpreview-remote-libvirt-multi-z-z|install": 3.5,
+      "ocp-fips-ovn-techpreview-remote-libvirt-multi-z-z|install": 3.0,
       "ocp-image-ecosystem-ovn-remote-libvirt-multi-z-z|install": 1.5,
       "ocp-ovn-remote-libvirt-s390x|upgrade": 2.25,
       "test-e2e-4-22-downstream|install": 2.62,
       "test-e2e-4-22-upstream|install": 1.5
     }
   },
-  "fingerprint": "05e8aa5383a71dbe99f2db4ae55457ab8415ad83b954783bc3ab75edda47870c",
+  "fingerprint": "c6ca70e526e3d4a907b9cace962f8836d7d98e4e682b5aaa396d96ce1a4baab5",
   "source": {
-    "sha": "231400da90516c3685aeca045955fa227d311896",
-    "short_sha": "231400da9051",
-    "subject": "feat(ci-tools): add prow-job-runner image (#89549)",
-    "committed_at": "2026-11-27T11:12:17Z",
-    "source_url": "https://github.com/openshift/release/commit/231400da90516c3685aeca045955fa227d311896"
+    "sha": "86d6e1bdaaf6c8e1ef84c5a8788c5ef9ec0f43ef",
+    "short_sha": "86d6e1bdaaf6",
+    "subject": "Sync OWNERS files by autoowners job at Sat, 28 Nov 2026 07:43:44 UTC (#89590)",
+    "committed_at": "2026-11-28T07:59:04Z",
+    "source_url": "https://github.com/openshift/release/commit/86d6e1bdaaf6c8e1ef84c5a8788c5ef9ec0f43ef"
   },
   "workflows": [
     {
@@ -84,7 +84,7 @@
       "profiles": [
         "libvirt-s390x-vpn"
       ],
-      "median_duration_hours": 3.0,
+      "median_duration_hours": 3.25,
       "sippy_matched": 19
     },
     {
